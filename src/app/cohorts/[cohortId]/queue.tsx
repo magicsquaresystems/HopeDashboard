@@ -143,6 +143,17 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
     const collapsed = useQueueLayoutStore((s) => s.collapsed);
     const toggleCollapsed = useQueueLayoutStore((s) => s.toggle);
 
+    // The badge counts rows in the list, which under an unfiltered view
+    // is the whole cohort — a different number from the topbar's "need
+    // follow-up" (high + medium only). Both are correct; side by side
+    // they look like a contradiction, so the badge says which it is.
+    const needingFollowUp = visible.filter(
+        (p) => p.risk_level === "high" || p.risk_level === "medium",
+    ).length;
+    const listedLabel =
+        `${visible.length} participant${visible.length === 1 ? "" : "s"} listed` +
+        (filter === "all" ? ` · ${needingFollowUp} need follow-up` : "");
+
     // Collapsed rail: a thin vertical card that preserves the count
     // (situational awareness) and lets the facilitator re-expand with
     // one click. Only renders at lg+ — at smaller breakpoints the queue
@@ -160,7 +171,9 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                 >
                     <ChevronsRight className="h-4 w-4" aria-hidden />
                 </button>
-                <Badge variant="neutral">{visible.length}</Badge>
+                <Badge variant="neutral" title={listedLabel}>
+                    {visible.length}
+                </Badge>
                 <span className="rotate-180 text-xs font-semibold uppercase tracking-wide text-muted [writing-mode:vertical-rl]">
                     Follow-up queue
                 </span>
@@ -174,7 +187,9 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                 <div className="flex items-center justify-between">
                     <CardTitle>Follow-up queue</CardTitle>
                     <div className="flex items-center gap-2">
-                        <Badge variant="neutral">{visible.length}</Badge>
+                        <Badge variant="neutral" title={listedLabel}>
+                            {visible.length}
+                        </Badge>
                         <button
                             type="button"
                             onClick={toggleCollapsed}
