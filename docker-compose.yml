@@ -1,0 +1,96 @@
+# One-command local/self-host stack: risk service + comment service + dashboard.
+#
+#   docker compose up --build
+#
+# Prereqs:
+#   * Sibling checkouts: ../engagement_ml and ../comment_generation
+#   * engagement_ml model bundles present at ../engagement_ml/models/
+#     (winner_T{7..42}.pkl, platt_T{7..42}.pkl, feature_*.csv, model_card_*.json —
+#     gitignored on GitHub; copy them from the HF Space repo or your training box)
+#   * Copy .env.example to .env and fill the secrets.
+#
+# Modes:
+#   * CPU stub demo (no model download, instant):
+#       HOPE_DISABLE_GENERATION=1 docker compose up --build
+#   * CPU real generation (slow, ~30-80 s per draft): default
+#   * GPU: uncomment the `deploy:` block under comment-api (needs NVIDIA
+#     Container Toolkit)
+services:
+  risk-api:
+    build:
+      context: ../engagement_ml
+      dockerfile: deploy/Dockerfile
+    container_name: hope-risk-api
+    ports: ["8000:8000"]
+    environment:
+      API_KEY: ${HOPE_RISK_API_KEY:-dev-key-change-me}
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-60}
+    volumes:
+      # Bundles are mounted, not baked — see prereqs above.
+      - ../engagement_ml/models:/app/deploy/models:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  comment-api:
+    build:
+      context: ../comment_generation
+      dockerfile: Dockerfile.api
+    container_name: hope-comment-api
+    ports: ["8001:8001"]
+    environment:
+      HOPE_API_SECRET: ${HOPE_API_SECRET:-dev-secret}
+      HOPE_API_AUTH: ${HOPE_API_AUTH:-disabled}
+      HOPE_GEN_MODEL_ID: ${HOPE_GEN_MODEL_ID:-michaelajao/qwen3.5-4b-hope-forum-lora}
+      # Needed to snapshot_download private adapters from the Hub.
+      HF_TOKEN: ${HF_TOKEN:-}
+      HOPE_DROPOUT_URL: http://risk-api:8000/health
+      HOPE_DASHBOARD_ORIGIN: ${HOPE_DASHBOARD_ORIGIN:-http://localhost:3000}
+      # Optional engagement-fingerprint panel; generation degrades
+      # gracefully (engagement_used: false) when the file is absent.
+      HOPE_DROPOUT_PANEL_PATH: /data/dropout_artifacts/cumulative_features_panel.parquet
+      # Set to 1 for the CPU stub demo (no model load, canned drafts).
+      HOPE_DISABLE_GENERATION: ${HOPE_DISABLE_GENERATION:-}
+    volumes:
+      - ../comment_generation/models:/app/models:ro
+      - ../comment_generation/outputs:/app/outputs
+      - ../engagement_ml/outputs/artifacts:/data/dropout_artifacts:ro
+      - hf-cache:/root/.cache/huggingface
+    depends_on:
+      risk-api:
+        condition: service_started
+    healthcheck:
+      # The CUDA image has no wget/curl; python3 is always present.
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    # Uncomment to use a CUDA GPU for the SLM:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - capabilities: [gpu]
+
+  dashboard:
+    build:
+      context: .
+    container_name: hope-dashboard
+    ports: ["3000:3000"]
+    environment:
+      COMMENT_GEN_URL: http://comment-api:8001
+      DROPOUT_API_URL: http://risk-api:8000
+      HOPE_API_SECRET: ${HOPE_API_SECRET:-dev-secret}
+      HOPE_RISK_API_KEY: ${HOPE_RISK_API_KEY:-dev-key-change-me}
+      AUTH_SECRET: ${AUTH_SECRET:-dev-auth-secret}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      FACILITATOR_EMAILS: ${FACILITATOR_EMAILS:-}
+      NEXT_PUBLIC_AUTH_PROVIDER: ${NEXT_PUBLIC_AUTH_PROVIDER:-dev-allowlist}
+    depends_on:
+      - comment-api
+      - risk-api
+
+volumes:
+  hf-cache: {}

@@ -1,0 +1,437 @@
+/**
+ * The triage queue — left column of the cohort page.
+ *
+ * Turns a cohort bundle into a risk-ranked worklist. The pipeline is:
+ *
+ *   bundle (local JSON)
+ *     → bundleToHistory() per participant, truncated at the selected week
+ *     → useCohortBatch() scores them all in one call
+ *     → filter by risk level, then by search text
+ *     → partition into visible vs hidden (snoozed / dismissed)
+ *     → paginate
+ *
+ * Two things about this file are easy to get wrong:
+ *
+ * 1. **Ordering is the service's, not ours.** `/batch` returns predictions
+ *    sorted by descending risk, and that order is preserved straight through
+ *    to render. There is no client-side sort to find — if the queue looks
+ *    mis-ordered, the scores changed, not the sorting.
+ *
+ * 2. **The week selector is an input to scoring, not a display filter.**
+ *    Changing the week rebuilds every `ParticipantHistory` with events
+ *    truncated to that day, which changes the cache key and re-scores the
+ *    whole cohort. It does not filter an existing list.
+ */
+
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronsLeft, ChevronsRight } from "lucide-react";
+
+const PAGE_SIZE = 10;
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { AnchoredWeekNotice } from "@/components/anchored-week-notice";
+import { QueueItem } from "@/components/queue-item";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useCohortBatch } from "@/lib/hooks/api";
+import { useCohortBundle } from "@/lib/hooks/useCohortBundle";
+import { useQueueLayoutStore } from "@/lib/store/queueLayoutStore";
+import { bundleParticipantIds, bundleToHistory } from "@/lib/realCohort";
+import {
+    isAnchoredWeek,
+    scoreAtDay as scoreAtDayForWeek,
+    useScoringStore,
+} from "@/lib/store/scoringStore";
+import { useUiStore } from "@/lib/store/uiStore";
+import { useQueueOp, useQueueState } from "@/lib/hooks/useQueueState";
+import { agoLabel, shortActor } from "@/lib/queue-state-shared";
+import { QUEUE_PILL_LABELS } from "@/lib/risk";
+import { lastActiveLabel } from "@/lib/signals";
+import { useBundleDisplayName } from "@/lib/hooks/displayName";
+import type { CohortMeta } from "@/lib/cohorts";
+import type {
+    ParticipantHistory,
+    RiskLevel,
+} from "@/lib/api/dropout";
+
+const FILTERS: Array<RiskLevel | "all"> = ["all", "high", "medium", "low"];
+
+/**
+ * "Now", frozen at mount.
+ *
+ * Snooze expiry is compared against this rather than a live clock so the
+ * comparison stays stable across re-renders. A ticking `Date.now()` would make
+ * the visible/hidden partition a moving target and could pop a participant back
+ * into the list mid-interaction. The page is re-mounted per cohort, so the
+ * value is fresh whenever it matters.
+ */
+function useMountTime(): number {
+    const [t] = useState(() => Date.now());
+    return t;
+}
+
+export function Queue({ cohort }: { cohort: CohortMeta }) {
+    const bundle = useCohortBundle(cohort.id);
+    const scoreAtWeek = useScoringStore((s) => s.scoreAtWeek);
+    const scoreAt = scoreAtDayForWeek(scoreAtWeek);
+    const histories: ParticipantHistory[] = useMemo(() => {
+        if (!bundle.data) return [];
+        // Real bundle present — build histories from real events up to
+        // the currently-selected programme week. programmeLengthDays
+        // comes from the cohort bundle so the API gets cohort-true
+        // metadata instead of a 42-day default.
+        return bundleParticipantIds(bundle.data)
+            .map((id) => bundleToHistory(bundle.data!, id, scoreAt))
+            .filter((h): h is ParticipantHistory => h !== null);
+    }, [bundle.data, scoreAt]);
+
+    const histLookup = useMemo(() => {
+        const m = new Map<string, ParticipantHistory>();
+        for (const h of histories) m.set(h.participant_id, h);
+        return m;
+    }, [histories]);
+
+    const { data, isLoading, error } = useCohortBatch(histories, cohort.id);
+    const selectedId = useUiStore((s) => s.selectedParticipantId);
+    const select = useUiStore((s) => s.selectParticipant);
+    // Shared across facilitators — see useQueueState. Another
+    // facilitator's snooze appears here within one poll interval.
+    const queueState = useQueueState(cohort.id);
+    const queueOp = useQueueOp(cohort.id);
+    const snoozes = queueState.data?.snoozes;
+    const dismissals = queueState.data?.dismissals;
+    const contacted = queueState.data?.contacted;
+    const now = useMountTime();
+
+    const [filter, setFilter] = useState<RiskLevel | "all">("all");
+    const [query, setQuery] = useState("");
+    const [showHidden, setShowHidden] = useState(false);
+    const [page, setPage] = useState(0);
+
+    // Reset to page 0 whenever filter/query change so the user isn't
+    // stuck on a page that no longer exists for the new result set.
+    // Legitimate side-effect (sync external prop change to local state).
+    useEffect(() => {
+        /* eslint-disable react-hooks/set-state-in-effect */
+        setPage(0);
+        /* eslint-enable react-hooks/set-state-in-effect */
+    }, [filter, query]);
+
+    const { visible, hidden } = useMemo(() => {
+        const preds = data?.predictions ?? [];
+        const q = query.trim().toLowerCase();
+        const matchesFilter = preds.filter((p) =>
+            filter === "all" ? true : p.risk_level === filter,
+        );
+        const matchesQuery = matchesFilter.filter((p) =>
+            q ? p.participant_id.toLowerCase().includes(q) : true,
+        );
+        const visible: typeof matchesQuery = [];
+        const hidden: typeof matchesQuery = [];
+        for (const p of matchesQuery) {
+            const isDismissed = Boolean(dismissals?.[p.participant_id]);
+            const snoozed = snoozes?.[p.participant_id];
+            const isSnoozed = snoozed !== undefined && snoozed.until > now;
+            if (isDismissed || isSnoozed) hidden.push(p);
+            else visible.push(p);
+        }
+        return { visible, hidden };
+    }, [data?.predictions, filter, query, snoozes, dismissals, now]);
+
+    // Paginate the visible list. With 51 cohort participants and a page
+    // size of 10, you get 6 pages; smaller filtered sets land on a
+    // single page. Currently active participant always lands on its
+    // page when selected from elsewhere — clamp here so the nav never
+    // points past the end.
+    const totalPages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+    const safePage = Math.min(page, totalPages - 1);
+    const pageStart = safePage * PAGE_SIZE;
+    const pageEnd = Math.min(pageStart + PAGE_SIZE, visible.length);
+    const pageItems = visible.slice(pageStart, pageEnd);
+
+    const collapsed = useQueueLayoutStore((s) => s.collapsed);
+    const toggleCollapsed = useQueueLayoutStore((s) => s.toggle);
+
+    // Collapsed rail: a thin vertical card that preserves the count
+    // (situational awareness) and lets the facilitator re-expand with
+    // one click. Only renders at lg+ — at smaller breakpoints the queue
+    // is a full-width row above the detail panel and collapsing it
+    // would just create empty space.
+    if (collapsed) {
+        return (
+            <Card className="hidden flex-col items-center gap-3 py-3 lg:flex">
+                <button
+                    type="button"
+                    onClick={toggleCollapsed}
+                    aria-label="Expand follow-up queue"
+                    title="Expand follow-up queue"
+                    className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text"
+                >
+                    <ChevronsRight className="h-4 w-4" aria-hidden />
+                </button>
+                <Badge variant="neutral">{visible.length}</Badge>
+                <span className="rotate-180 text-xs font-semibold uppercase tracking-wide text-muted [writing-mode:vertical-rl]">
+                    Follow-up queue
+                </span>
+            </Card>
+        );
+    }
+
+    return (
+        <Card className="flex flex-col">
+            <CardHeader>
+                <div className="flex items-center justify-between">
+                    <CardTitle>Follow-up queue</CardTitle>
+                    <div className="flex items-center gap-2">
+                        <Badge variant="neutral">{visible.length}</Badge>
+                        <button
+                            type="button"
+                            onClick={toggleCollapsed}
+                            aria-label="Collapse follow-up queue"
+                            title="Collapse follow-up queue"
+                            className="hidden rounded p-1 text-muted hover:bg-surface-2 hover:text-text lg:inline-flex"
+                        >
+                            <ChevronsLeft className="h-4 w-4" aria-hidden />
+                        </button>
+                    </div>
+                </div>
+                <div className="space-y-2 pt-2">
+                    <Input
+                        type="search"
+                        placeholder="Search participants…"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        aria-label="Search participants"
+                    />
+                    <div
+                        className="flex flex-wrap gap-1"
+                        role="group"
+                        aria-label="Filter queue by status"
+                    >
+                        {FILTERS.map((f) => (
+                            <Button
+                                key={f}
+                                size="sm"
+                                variant={filter === f ? "primary" : "ghost"}
+                                aria-pressed={filter === f}
+                                onClick={() => setFilter(f)}
+                            >
+                                {QUEUE_PILL_LABELS[f]}
+                            </Button>
+                        ))}
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent className="flex-1 space-y-1 overflow-y-auto">
+                {/* Past the trained horizons every score — and therefore
+                    the whole ranking — is the week-6 one. Said once here
+                    rather than on 51 rows. */}
+                {isAnchoredWeek(scoreAtWeek) && !isLoading && (
+                    <AnchoredWeekNotice
+                        week={scoreAtWeek}
+                        variant="compact"
+                        className="mb-2"
+                    />
+                )}
+                {isLoading && (
+                    <div className="space-y-2">
+                        {[0, 1, 2, 3, 4].map((i) => (
+                            <Skeleton key={i} className="h-14 w-full" />
+                        ))}
+                    </div>
+                )}
+                {error && (
+                    <p className="text-xs text-risk-hi">
+                        Failed to load: {String((error as Error).message)}
+                    </p>
+                )}
+                {visible.length === 0 && !isLoading && !error && (
+                    <p className="px-1 py-4 text-center text-xs text-muted">
+                        No participants match the current filter.
+                    </p>
+                )}
+                {pageItems.map((p) => {
+                    const hist = histLookup.get(p.participant_id);
+                    if (!hist) return null;
+                    // "Already contacted by X" is the whole point of
+                    // sharing this state: without it, two facilitators
+                    // working the same cohort message the same person.
+                    const contact = contacted?.[p.participant_id];
+                    return (
+                        <QueueItem
+                            key={p.participant_id}
+                            participantId={p.participant_id}
+                            cohortId={cohort.id}
+                            riskLevel={p.risk_level}
+                            riskScore={p.dropout_risk}
+                            lastActiveLabel={lastActiveLabel(hist)}
+                            selected={selectedId === p.participant_id}
+                            onClick={() => select(p.participant_id)}
+                            contactedNote={
+                                contact
+                                    ? `Replied by ${shortActor(contact.by)} · ${agoLabel(contact.at, now)}`
+                                    : undefined
+                            }
+                        />
+                    );
+                })}
+                {totalPages > 1 && (
+                    <div className="flex items-center justify-between gap-2 border-t border-border pt-2 text-xs text-muted">
+                        <span>
+                            Showing {pageStart + 1}–{pageEnd} of{" "}
+                            {visible.length}
+                        </span>
+                        <div
+                            className="inline-flex items-center gap-0.5"
+                            role="group"
+                            aria-label="Queue pagination"
+                        >
+                            <button
+                                type="button"
+                                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                                disabled={safePage === 0}
+                                className="rounded px-2 py-1 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+                                aria-label="Previous page"
+                            >
+                                ←
+                            </button>
+                            {Array.from({ length: totalPages }, (_, i) => i).map(
+                                (i) => (
+                                    <button
+                                        key={i}
+                                        type="button"
+                                        onClick={() => setPage(i)}
+                                        aria-current={
+                                            i === safePage ? "page" : undefined
+                                        }
+                                        className={
+                                            "min-w-7 rounded px-2 py-1 hover:bg-surface-2 " +
+                                            (i === safePage
+                                                ? "bg-surface-2 font-semibold text-text"
+                                                : "")
+                                        }
+                                    >
+                                        {i + 1}
+                                    </button>
+                                ),
+                            )}
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    setPage((p) =>
+                                        Math.min(totalPages - 1, p + 1),
+                                    )
+                                }
+                                disabled={safePage >= totalPages - 1}
+                                className="rounded px-2 py-1 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+                                aria-label="Next page"
+                            >
+                                →
+                            </button>
+                        </div>
+                    </div>
+                )}
+                {hidden.length > 0 && (
+                    <div className="border-t border-border pt-2">
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setShowHidden((v) => !v)}
+                            aria-expanded={showHidden}
+                            className="w-full justify-between gap-2 text-xs font-normal text-text-2"
+                        >
+                            <span>
+                                {hidden.length} snoozed / dismissed
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-muted">
+                                {showHidden ? "Hide" : "Show"}
+                                <ChevronDown
+                                    className={
+                                        "h-3.5 w-3.5 transition-transform " +
+                                        (showHidden ? "rotate-180" : "")
+                                    }
+                                    aria-hidden
+                                />
+                            </span>
+                        </Button>
+                        {showHidden && (
+                            <ul className="mt-2 space-y-1">
+                                {hidden.map((p) => {
+                                    const dismissal =
+                                        dismissals?.[p.participant_id];
+                                    const stamp =
+                                        dismissal ?? snoozes?.[p.participant_id];
+                                    return (
+                                        <HiddenRow
+                                            key={p.participant_id}
+                                            participantId={p.participant_id}
+                                            cohortId={cohort.id}
+                                            isDismissed={Boolean(dismissal)}
+                                            by={stamp?.by}
+                                            at={stamp?.at}
+                                            now={now}
+                                            onUndo={() =>
+                                                queueOp.mutate({
+                                                    op: dismissal
+                                                        ? "undoDismiss"
+                                                        : "undoSnooze",
+                                                    participantId:
+                                                        p.participant_id,
+                                                })
+                                            }
+                                        />
+                                    );
+                                })}
+                            </ul>
+                        )}
+                    </div>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
+function HiddenRow({
+    participantId,
+    cohortId,
+    isDismissed,
+    by,
+    at,
+    now,
+    onUndo,
+}: {
+    participantId: string;
+    cohortId: number;
+    isDismissed: boolean;
+    /** Facilitator who hid this row — may be a colleague, not you. */
+    by?: string;
+    at?: number;
+    now: number;
+    onUndo: () => void;
+}) {
+    const alias = useBundleDisplayName(participantId, cohortId);
+    return (
+        <li className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface-2 px-2.5 py-1.5">
+            <span className="min-w-0 truncate text-xs text-text-2">
+                {alias}
+                <span className="ml-1.5 text-muted">
+                    {isDismissed ? "dismissed" : "snoozed"}
+                    {by && ` by ${shortActor(by)}`}
+                    {at !== undefined && ` · ${agoLabel(at, now)}`}
+                </span>
+            </span>
+            <button
+                type="button"
+                onClick={onUndo}
+                className="text-xs text-accent-ink hover:underline"
+            >
+                Undo
+            </button>
+        </li>
+    );
+}

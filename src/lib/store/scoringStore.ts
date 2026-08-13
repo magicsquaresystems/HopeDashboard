@@ -1,0 +1,143 @@
+"use client";
+
+import { create } from "zustand";
+
+/**
+ * Programme week the cohort is currently being scored at. Maps directly
+ * onto engagement_ml's `score_at_day = week * 7`.
+ *
+ * Three separate limits govern which weeks a facilitator may pick, and
+ * conflating them is the easy mistake here:
+ *
+ * 1. **Programme shape** — how many weeks the cohort runs for. Not fixed:
+ *    4-week pilots, 6-week IIH cohorts, and 8-week modules all coexist,
+ *    so this comes from cohort metadata, never a constant.
+ *
+ * 2. **Data availability** — how many weeks have actually elapsed. On a
+ *    live feed a cohort in week 2 has no week-5 behaviour to score; the
+ *    model would be handed an empty tail and would read it as total
+ *    disengagement, flagging the whole cohort high-risk. Weeks beyond
+ *    the elapsed point are therefore offered but disabled, not scored.
+ *    (Each week is cumulative — week 2 scores days 0..13, i.e. weeks 1
+ *    *and* 2 — so "weeks with data" is a simple ceiling, not a range.)
+ *
+ * 3. **Trained horizons** — engagement_ml ships bundles only at
+ *    T ∈ {7,14,21,28,35,42}. Past that the service still answers, but it
+ *    anchors the score to days 0..41 and says so in the response
+ *    (`horizon_used`, `anchored_to_days`, `note`). Verified live against
+ *    the deployed Space. So weeks 7+ of an 8-week module are selectable
+ *    and honest — the UI just has to disclose the anchoring rather than
+ *    present a W8 score as if the model had been trained for it.
+ */
+
+/** Set of horizons engagement_ml ships bundles for. */
+export const MODEL_HORIZONS_DAYS = [7, 14, 21, 28, 35, 42] as const;
+export const MODEL_MAX_HORIZON_DAYS = 42;
+export const MODEL_MAX_WEEK = 6;
+
+/**
+ * Sanity ceiling on programme length. Nothing in the platform enforces a
+ * maximum, but a bad `programmeLengthDays` (a stray 3650) shouldn't paint
+ * 520 week pills. Raise it if a genuinely longer programme appears.
+ */
+export const MAX_PROGRAMME_WEEK = 16;
+
+/**
+ * A 1-based programme week. Deliberately a plain `number` rather than a
+ * `1|2|…|6` union: programme length is cohort metadata, so the valid set
+ * is only known at runtime. Use `programmeWeeks()` / `weeksWithData()` to
+ * get the legal values instead of assuming a range.
+ */
+export type ProgrammeWeek = number;
+
+export const DEFAULT_PROGRAMME_WEEK: ProgrammeWeek = MODEL_MAX_WEEK;
+
+const DAY_MS = 86_400_000;
+
+/** Day offset engagement_ml should score at for a given week. */
+export function scoreAtDay(week: ProgrammeWeek): number {
+    return week * 7;
+}
+
+/** True when this week is past the model's trained horizons and the
+ *  service will anchor the score back to T=42. */
+export function isAnchoredWeek(week: ProgrammeWeek): boolean {
+    return scoreAtDay(week) > MODEL_MAX_HORIZON_DAYS;
+}
+
+/**
+ * Every week the programme itself defines, regardless of whether data
+ * exists yet.
+ *
+ *   4-week cohort  (28 days) → [1, 2, 3, 4]
+ *   6-week cohort  (42 days) → [1, 2, 3, 4, 5, 6]
+ *   8-week cohort  (56 days) → [1, 2, 3, 4, 5, 6, 7, 8]
+ *
+ * Always returns at least [1] so the UI never renders an empty selector.
+ */
+export function programmeWeeks(programmeLengthDays: number): ProgrammeWeek[] {
+    const weeks = Math.floor(programmeLengthDays / 7);
+    const cap = Math.min(Math.max(weeks, 1), MAX_PROGRAMME_WEEK);
+    return Array.from({ length: cap }, (_, i) => i + 1);
+}
+
+/**
+ * How many programme weeks have data as of `now`.
+ *
+ * A week is only scoreable once it has fully elapsed: scoring at week N
+ * asks the model about days 0..(7N-1), so week N needs 7N days of
+ * history behind it. Partial weeks are excluded — a half-finished week
+ * looks like a drop in engagement to the model, not a week in progress.
+ *
+ * Floors at 1 so a cohort on day 3 still renders a usable selector; the
+ * queue's own empty state covers the "nothing yet" case. Clamped to the
+ * programme's own length: a finished cohort doesn't keep accruing weeks
+ * forever.
+ */
+export function weeksWithData(
+    programmeLengthDays: number,
+    effectiveStart: string | number | Date,
+    now: number = Date.now(),
+): number {
+    const startMs = new Date(effectiveStart).getTime();
+    const total = programmeWeeks(programmeLengthDays).length;
+    if (!Number.isFinite(startMs)) return total;
+    const elapsedDays = Math.floor((now - startMs) / DAY_MS);
+    const elapsed = Math.floor(elapsedDays / 7);
+    return Math.min(total, Math.max(1, elapsed));
+}
+
+/**
+ * Weeks a facilitator may actually score at — the programme's weeks,
+ * truncated to those with data.
+ */
+export function availableWeeks(
+    programmeLengthDays: number,
+    effectiveStart?: string | number | Date,
+    now: number = Date.now(),
+): ProgrammeWeek[] {
+    const all = programmeWeeks(programmeLengthDays);
+    if (effectiveStart === undefined) return all;
+    const max = weeksWithData(programmeLengthDays, effectiveStart, now);
+    return all.filter((w) => w <= max);
+}
+
+type ScoringState = {
+    scoreAtWeek: ProgrammeWeek;
+    setScoreAtWeek: (week: ProgrammeWeek) => void;
+    /**
+     * Pull the current selection back to the last week that has data.
+     * Call when the cohort changes so the selector never points at a
+     * week the cohort hasn't reached (or doesn't have at all).
+     */
+    clampToAvailable: (maxWeek: ProgrammeWeek) => void;
+};
+
+export const useScoringStore = create<ScoringState>((set, get) => ({
+    scoreAtWeek: DEFAULT_PROGRAMME_WEEK,
+    setScoreAtWeek: (week) => set({ scoreAtWeek: week }),
+    clampToAvailable: (maxWeek) => {
+        const safe = Math.max(1, maxWeek);
+        if (get().scoreAtWeek > safe) set({ scoreAtWeek: safe });
+    },
+}));
