@@ -277,6 +277,8 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                             cohortId={cohort.id}
                             riskLevel={p.risk_level}
                             riskScore={p.dropout_risk}
+                            thresholdLow={p.threshold_low}
+                            thresholdHigh={p.threshold_high}
                             lastActiveLabel={lastActiveLabel(hist)}
                             selected={selectedId === p.participant_id}
                             onClick={() => select(p.participant_id)}

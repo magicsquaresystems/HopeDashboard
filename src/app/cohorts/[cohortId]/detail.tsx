@@ -56,7 +56,7 @@ import {
 import { useUiStore } from "@/lib/store/uiStore";
 import { useQueueOp } from "@/lib/hooks/useQueueState";
 import { SNOOZE_DAYS } from "@/lib/queue-state-shared";
-import { friendlyStatus } from "@/lib/risk";
+import { friendlyStatus, tierExplanation } from "@/lib/risk";
 import type { ParticipantHistory } from "@/lib/api/dropout";
 import {
     daysSinceLastEvent,
@@ -167,6 +167,15 @@ export function Detail({
     const status = prediction.data
         ? friendlyStatus(prediction.data.risk_level)
         : null;
+    // Where this percentage sits against the model's own cut-offs. Red
+    // starts near 21%, not 50%, so the number alone reads as a mistake.
+    const bandNote = prediction.data
+        ? tierExplanation(
+              prediction.data.risk_level,
+              prediction.data.threshold_low,
+              prediction.data.threshold_high,
+          )
+        : undefined;
 
     return (
         <Card className="flex flex-col gap-3">
@@ -208,6 +217,7 @@ export function Detail({
                             <Badge
                                 variant={status.badgeVariant}
                                 className="whitespace-nowrap"
+                                title={bandNote}
                             >
                                 {status.label}
                             </Badge>

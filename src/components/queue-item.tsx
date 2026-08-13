@@ -5,7 +5,7 @@ import { Check } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { friendlyStatus } from "@/lib/risk";
+import { friendlyStatus, tierExplanation } from "@/lib/risk";
 import { useBundleDisplayName } from "@/lib/hooks/displayName";
 import type { RiskLevel } from "@/lib/api/dropout";
 
@@ -14,6 +14,11 @@ type QueueItemProps = {
     cohortId?: number;
     riskLevel: RiskLevel;
     riskScore: number;
+    /** The service's calibrated tier cut-offs for the scored horizon
+     *  (`threshold_low` / `threshold_high`). Drive the tooltip that
+     *  explains why e.g. 30% reads as "Needs attention". */
+    thresholdLow?: number;
+    thresholdHigh?: number;
     lastActiveLabel?: string;
     selected?: boolean;
     onClick?: () => void;
@@ -27,12 +32,15 @@ export function QueueItem({
     cohortId,
     riskLevel,
     riskScore,
+    thresholdLow,
+    thresholdHigh,
     lastActiveLabel,
     selected,
     onClick,
     contactedNote,
 }: QueueItemProps) {
     const status = friendlyStatus(riskLevel);
+    const bandNote = tierExplanation(riskLevel, thresholdLow, thresholdHigh);
     const aliasLabel = useBundleDisplayName(participantId, cohortId);
     return (
         <button
@@ -54,14 +62,20 @@ export function QueueItem({
                     <span className="truncate text-sm font-medium text-text">
                         {aliasLabel}
                     </span>
-                    <span className="shrink-0 text-xs tabular-nums text-muted">
-                        {(riskScore * 100).toFixed(0)}%
+                    <span
+                        className="shrink-0 text-xs tabular-nums text-muted"
+                        title={bandNote}
+                    >
+                        {Number.isFinite(riskScore)
+                            ? `${(riskScore * 100).toFixed(0)}%`
+                            : "—"}
                     </span>
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                     <Badge
                         variant={status.badgeVariant}
                         className="whitespace-nowrap"
+                        title={bandNote}
                     >
                         {status.label}
                     </Badge>
