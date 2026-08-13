@@ -4,23 +4,18 @@
  * Edge-runtime safe: only Credentials provider is statically imported here,
  * so middleware (which runs in Edge) does not pull in Node-only modules.
  *
- * Two modes, selected by `AUTH_MODE`:
+ * Sign-in is platform hand-off only. The Hope Move platform links a
+ * facilitator here with a short-lived signed token carrying their
+ * identity; there is no email form and no direct-credentials provider.
+ * The old `dev-allowlist` provider (any email in open mode) was a testing
+ * affordance and was removed — on a deployment fronting real participant
+ * data it amounted to unauthenticated access. For local development, mint
+ * a hand-off link with `scripts/mint-handoff-token.mjs`.
  *
- *   - `open` (default for shared testing) — Credentials.authorize() accepts
- *     any non-empty email, stamps a session, no allowlist enforced. Lets
- *     reviewers + testers in without managing FACILITATOR_EMAILS. Topbar
- *     surfaces a "Testing mode" pill so it's visible at a glance.
- *
- *   - `allowlist` (production posture) — `FACILITATOR_EMAILS` (comma-
- *     separated) is the gate. Empty allowlist in non-prod also lets anyone
- *     in (legacy behaviour); empty in prod rejects everyone.
- *
- * Magic-link via Nodemailer was previously imported eagerly and crashed
- * the Edge bundle ("stream module not supported"). When the workshop needs
- * magic-link, re-introduce Nodemailer behind the documented NextAuth v5
- * Edge/Node split — see https://authjs.dev/guides/edge-compatibility — by
- * adding a separate `auth.node.ts` for API routes and keeping this file
- * as the Edge-safe config.
+ * `AUTH_MODE` still matters for cohort *visibility*, not sign-in: with no
+ * explicit assignment, `open` shows every cohort (convenient locally),
+ * `allowlist` shows none (deny-by-default; production posture). See
+ * lib/server/assignments.ts.
  */
 
 import NextAuth, { type NextAuthConfig } from "next-auth";
@@ -33,18 +28,6 @@ export type AuthMode = "open" | "allowlist";
 export function authMode(): AuthMode {
     return process.env.AUTH_MODE === "allowlist" ? "allowlist" : "open";
 }
-
-function allowlist(): Set<string> {
-    const raw = process.env.FACILITATOR_EMAILS ?? "";
-    return new Set(
-        raw
-            .split(",")
-            .map((s) => s.trim().toLowerCase())
-            .filter(Boolean),
-    );
-}
-
-const isProd = process.env.NODE_ENV === "production";
 
 const providers: NextAuthConfig["providers"] = [
     /**
@@ -70,22 +53,6 @@ const providers: NextAuthConfig["providers"] = [
             return { id: email, email, name: name ?? email.split("@")[0] };
         },
     }),
-    Credentials({
-        id: "dev-allowlist",
-        name: "Dev allowlist",
-        credentials: {
-            email: { label: "Email", type: "email" },
-        },
-        async authorize(input) {
-            const email = String(input?.email ?? "").toLowerCase();
-            if (!email) return null;
-            if (authMode() === "open") {
-                return { id: email, email, name: email.split("@")[0] };
-            }
-            if (!allowlist().has(email)) return null;
-            return { id: email, email, name: email.split("@")[0] };
-        },
-    }),
 ];
 
 export const config: NextAuthConfig = {
@@ -102,14 +69,11 @@ export const config: NextAuthConfig = {
             // allowlist would mean maintaining the roster twice and
             // locking out a legitimate facilitator the platform just
             // onboarded. The signature is the authority here.
-            if (account?.provider === "platform-handoff") return true;
-            if (authMode() === "open") return true;
-            const list = allowlist();
-            if (list.size === 0) {
-                // Empty allowlist in dev = allow anyone; tighten in prod.
-                return !isProd;
-            }
-            return list.has(email);
+            //
+            // Hand-off is the only provider, so anything else is denied
+            // outright — a second provider added later must opt in here
+            // explicitly rather than inherit access.
+            return account?.provider === "platform-handoff";
         },
     },
 };

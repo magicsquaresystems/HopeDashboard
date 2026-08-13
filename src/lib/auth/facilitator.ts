@@ -21,9 +21,9 @@ import { ApiError } from "@/lib/api/client";
  * Email is the identifier, not the NextAuth `id`. With the Credentials
  * provider on a JWT session, `session.user` carries `email` and `name`
  * but not `id` (the `sub` claim isn't surfaced without a custom
- * callback). Email is also what `FACILITATOR_EMAILS` gates on, so the
- * allowlist, the audit trail, and the cohort assignments all key on the
- * same string.
+ * callback). Email is also what the hand-off token asserts and what
+ * cohort assignments key on, so the audit trail and the access checks
+ * all use the same string.
  */
 export async function requireFacilitatorEmail(): Promise<string> {
     const session = await auth();

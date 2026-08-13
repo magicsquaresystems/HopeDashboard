@@ -22,7 +22,6 @@ export function Topbar({ cohort }: TopbarProps) {
     // both the audit trail and the training feedback.
     const { data: session } = useSession();
     const who = session?.user?.name ?? session?.user?.email ?? null;
-    const isTestingMode = process.env.NEXT_PUBLIC_AUTH_MODE !== "allowlist";
 
     // While a re-score is in flight there are no counts. Rendering `0`
     // would state — confidently and wrongly — that nobody needs follow-up,
@@ -76,14 +75,6 @@ export function Topbar({ cohort }: TopbarProps) {
                 />
                 {/* Session counter is local state — never in flight. */}
                 <StatPill value={sentThisSession} label="contacted this session" />
-                {isTestingMode && (
-                    <span
-                        className="rounded-md border border-risk-md/40 bg-risk-md-bg px-2 py-1 text-[11px] font-medium text-risk-md"
-                        title="AUTH_MODE=open — any email can sign in. Set AUTH_MODE=allowlist for production."
-                    >
-                        Testing mode
-                    </span>
-                )}
                 {who && (
                     <div className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1.5">
                         <span

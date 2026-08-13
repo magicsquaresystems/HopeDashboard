@@ -1,8 +1,7 @@
 "use client";
 
-import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useState, useTransition } from "react";
+import { Suspense } from "react";
 
 /**
  * Not the way in — the way in is `/enter`, which the Hope Move platform
@@ -10,15 +9,14 @@ import { Suspense, useState, useTransition } from "react";
  * Facilitators are already signed in over there; asking them to
  * authenticate again would be friction with no security benefit.
  *
- * This page exists for the two cases where that hasn't happened: a
- * hand-off that failed (expired link, misconfigured secret), and local
- * development, where there is no platform to arrive from. In testing
- * mode it offers the email form so the dashboard is runnable on a
- * laptop; in production posture it explains where to go instead, since
- * a form that can't help anyone is worse than a sentence that can.
+ * This page exists for the cases where that hasn't happened: a hand-off
+ * that failed (expired link, misconfigured secret) or someone opening
+ * the URL directly. It explains where to go; it deliberately offers no
+ * sign-in form of its own. The direct email form that used to live here
+ * was a testing affordance, and testing affordances don't belong on a
+ * deployment that fronts real participant data. For local development,
+ * mint a hand-off link with `scripts/mint-handoff-token.mjs`.
  */
-const AUTH_OPEN = process.env.NEXT_PUBLIC_AUTH_MODE !== "allowlist";
-
 const HANDOFF_ERRORS: Record<string, string> = {
     no_token: "That link didn't carry a sign-in token.",
     invalid_token:
@@ -38,7 +36,6 @@ export default function LoginPage() {
 function LoginBody() {
     const params = useSearchParams();
     const handoffError = HANDOFF_ERRORS[params.get("error") ?? ""] ?? null;
-    const nextUrl = params.get("callbackUrl") ?? "/cohorts";
     const hopeMoveUrl = process.env.NEXT_PUBLIC_HOPE_MOVE_URL;
 
     return (
@@ -71,58 +68,7 @@ function LoginBody() {
                         Go to Hope Move
                     </a>
                 )}
-
-                {AUTH_OPEN && <DevSignIn nextUrl={nextUrl} />}
             </div>
         </main>
-    );
-}
-
-/** Laptop-only fallback: there is no platform to arrive from in dev. */
-function DevSignIn({ nextUrl }: { nextUrl: string }) {
-    const [email, setEmail] = useState("");
-    const [pending, startTransition] = useTransition();
-    const [error, setError] = useState<string | null>(null);
-
-    function onSubmit(e: React.FormEvent) {
-        e.preventDefault();
-        setError(null);
-        startTransition(async () => {
-            const result = await signIn("dev-allowlist", {
-                email,
-                redirect: false,
-                callbackUrl: nextUrl,
-            });
-            if (result?.error) setError("Sign-in failed. Try again.");
-            else if (result?.url) window.location.href = result.url;
-        });
-    }
-
-    return (
-        <form onSubmit={onSubmit} className="space-y-3 border-t border-border pt-4">
-            <p className="text-xs font-medium text-muted">
-                Testing mode — sign in directly
-            </p>
-            <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.org"
-                required
-                className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent-2"
-            />
-            {error && (
-                <p className="text-sm text-risk-hi" role="alert">
-                    {error}
-                </p>
-            )}
-            <button
-                type="submit"
-                disabled={pending}
-                className="w-full rounded-md border border-border px-4 py-2 text-sm font-medium text-text disabled:opacity-50"
-            >
-                {pending ? "Signing in…" : "Continue"}
-            </button>
-        </form>
     );
 }
