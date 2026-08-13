@@ -15,11 +15,11 @@ Three services, no shared database, no synchronous chain:
              │  webhook / cron
              ▼
 ┌─────────────────────────┐    ┌───────────────────────────┐
-│  hope-dashboard         │───▶│  comment_generation       │  Qwen3-4B + LoRA (HF Space or HPC)
+│  hope-dashboard         │───▶│  comment_generation       │  Qwen3.5-4B + DoRA (HF Space)
 │  (Next.js 16, Vercel)   │    │  FastAPI / port 8001      │  → drafts + memory + HITL
 │                         │    └───────────────────────────┘
 │  Server proxy layer     │    ┌───────────────────────────┐
-│  signs HMAC, forwards   │───▶│  engagement_ml            │  LightGBM @ T∈{7,14,21,28,35,42}
+│  signs HMAC, forwards   │───▶│  engagement_ml            │  LightGBM @ T∈{7,14,21,28,35,42,49,56}
 │  HF_TOKEN, hides keys   │    │  FastAPI / port 8000      │  → dropout risk + SHAP factors
 └─────────────────────────┘    └───────────────────────────┘
 ```
@@ -30,7 +30,7 @@ Three services, no shared database, no synchronous chain:
 - `comment_generation` is read+write — drafts are inference, but the memory store and HITL log are persistent.
 - `hope-dashboard` is the only UI surface — facilitators interact here; it never serves to the public Hope Move platform.
 
-Splitting them means we scale and deploy each on its own cadence. The dashboard can be redeployed without restarting the GPU Space; the LoRA adapter can be swapped without touching the dropout models.
+Splitting them means we scale and deploy each on its own cadence. The dashboard can be redeployed without restarting the GPU Space; the served adapter can be changed (an env change + Space restart) without touching the dropout models.
 
 ---
 
@@ -44,7 +44,7 @@ Splitting them means we scale and deploy each on its own cadence. The dashboard 
 | `/cohorts` | `src/app/cohorts/page.tsx` | cohort list (one card per `CohortMeta` in [src/lib/cohorts.ts](../src/lib/cohorts.ts)) |
 | `/cohorts/[cohortId]` | `src/app/cohorts/[cohortId]/page.tsx` (server) | 3-column dashboard: Queue • Detail • Drafts |
 | `/api/proxy/*` | `src/app/api/proxy/**/route.ts` | server-side proxies that sign + forward to backend services |
-| `/api/auth/*` | NextAuth v5 | dev-allowlist Credentials provider |
+| `/api/auth/*` | NextAuth v5 | platform hand-off Credentials provider — sign-in is hand-off-token only |
 
 The cohort page is a **Server Component**. The three columns (Queue, Detail, Drafts) are client components reading from Zustand stores.
 
@@ -55,8 +55,7 @@ State is split by *concern*, not by component. Each store lives in [src/lib/stor
 | Store | Owns | Reset on |
 | --- | --- | --- |
 | [`uiStore`](../src/lib/store/uiStore.ts) | `selectedParticipantId`, `selectedPostTs` | cohort change, participant change (post id) |
-| [`scoringStore`](../src/lib/store/scoringStore.ts) | `scoreAtWeek` (W1–W6), helpers `availableWeeks()` + `clampToProgrammeLength()` | never (week selector is global per session) |
-| [`queueStore`](../src/lib/store/queueStore.ts) | `snoozedUntil`, `dismissedAt` (per participant) | cohort change |
+| [`scoringStore`](../src/lib/store/scoringStore.ts) | `scoreAtWeek` (programme-derived weeks), helpers `availableWeeks()` + `clampToAvailable()` | never (week selector is global per session) |
 | [`notesStore`](../src/lib/store/notesStore.ts) | local facilitator notes (per participant) | cohort change |
 | [`sessionStatsStore`](../src/lib/store/sessionStatsStore.ts) | `sentThisSession` counter for the topbar | never |
 
@@ -102,7 +101,7 @@ This means:
 
 - `HOPE_API_SECRET` and `HF_TOKEN` never leave the Node runtime.
 - The browser only sees `/api/proxy/*` paths — never the upstream URLs or credentials.
-- A 5xx from upstream is classified by [`classifyGenerateError`](../src/app/cohorts/[cohortId]/drafts.tsx) into a friendly "Comment generation is offline" card; raw stack traces never reach facilitators.
+- A 5xx from upstream is classified by [`classifyGenerateError`](../src/app/cohorts/[cohortId]/drafts-helpers.ts) into a friendly "Comment generation is offline" card; raw stack traces never reach facilitators.
 
 ### 2.5 Component map
 
@@ -112,9 +111,8 @@ Where to make a UI change. Components live in [src/components/](../src/component
 
 | Component | Renders | Reads from |
 | --- | --- | --- |
-| [`topbar`](../src/components/topbar.tsx) | cohort name, at-risk count, sent-this-session counter, model picker slot | `useCohortBundle`, `useCohortBatch`, `scoringStore`, `sessionStatsStore` |
-| [`week-selector`](../src/components/week-selector.tsx) | W1–W6 selector; clamps to programme length | `scoringStore` (`scoreAtWeek`, `clampToProgrammeLength`) |
-| [`model-picker`](../src/components/model-picker.tsx) | adapter dropdown; `POST /admin/model` on change | `useCommentGenModels`, `useSwitchCommentGenModel` |
+| [`topbar`](../src/components/topbar.tsx) | cohort name, at-risk counts (hidden participants excluded), contacted-this-session counter | `useCohortScoring`, `useQueueState`, `sessionStatsStore` |
+| [`week-selector`](../src/components/week-selector.tsx) | programme-week selector; disables weeks that haven't elapsed, discloses anchored weeks | `scoringStore` (`scoreAtWeek`, `clampToAvailable`) |
 | [`risk-model-chip`](../src/components/risk-model-chip.tsx) | which horizon model produced the current scores | `useRiskModelInfo`, `scoringStore` |
 | [`cohort-session-reset`](../src/components/cohort-session-reset.tsx) | nothing — clears participant-keyed stores on `cohortId` change | all stores (§2.2) |
 
@@ -122,7 +120,7 @@ Where to make a UI change. Components live in [src/components/](../src/component
 
 | Component | Renders | Reads from |
 | --- | --- | --- |
-| [`queue-item`](../src/components/queue-item.tsx) | one participant row: alias, risk badge, last-active label | props + `useBundleDisplayName`. Presentational — snooze/dismiss state lives in `queueStore`, read by `queue.tsx` |
+| [`queue-item`](../src/components/queue-item.tsx) | one participant row: alias, risk badge, last-active label | props + `useBundleDisplayName`. Presentational — snooze/dismiss state is server-shared (`useQueueState`), read by `queue.tsx` |
 
 **Detail column** — `detail.tsx`
 
@@ -143,13 +141,12 @@ Where to make a UI change. Components live in [src/components/](../src/component
 | [`discussion-thread`](../src/components/discussion-thread.tsx) | forum thread context, auto-scrolled to the focal post | props only |
 | [`follow-up-activity`](../src/components/follow-up-activity.tsx) | participant memory + local facilitator notes | `useMemory`, `notesStore` |
 
-**Shared** — [`empty-state`](../src/components/empty-state.tsx) (detail, drafts, activity-timeline), and [src/components/ui/](../src/components/ui/): `badge`, `button`, `card`, `input`, `select`, `skeleton`, `textarea` — unstyled primitives, no app logic.
+**Shared** — [`empty-state`](../src/components/empty-state.tsx) (detail, drafts, activity-timeline), and [src/components/ui/](../src/components/ui/): `badge`, `button`, `card`, `input`, `skeleton`, `textarea` — unstyled primitives, no app logic.
 
 **The wiring convention worth knowing:** the *panel* files own the mutation hooks and pass callbacks down; components stay presentational. `drafts.tsx` calls `useGenerate`, `useThumb`, and `useEvent`, then hands `draft-card` an `onThumb`/`onSend` pair. Only `usePolishText` (in `draft-card`) and `useMemory` (in `follow-up-activity`) break that rule, both because the request is scoped to something the component already holds. So **to change what a draft action does, edit `drafts.tsx`; to change how it looks, edit `draft-card.tsx`.**
 
-All data hooks live in [src/lib/hooks/api.ts](../src/lib/hooks/api.ts): `useCohortBatch`, `useParticipantPrediction`, `useMemory`, `useGenerate`, `usePolishText`, `useThumb`, `useEvent`, `useRiskModelInfo`, `useCommentGenModels`, `useSwitchCommentGenModel`. Every one calls a `/api/proxy/*` route (§2.4) — no component talks to a backend directly.
+All data hooks live in [src/lib/hooks/api.ts](../src/lib/hooks/api.ts): `useCohortBatch`, `useParticipantPrediction`, `useMemory`, `useGenerate`, `usePolishText`, `useThumb`, `useEvent`, `useRiskModelInfo`. Every one calls a `/api/proxy/*` route (§2.4) — no component talks to a backend directly.
 
-> **Unused:** `ai-summary-card.tsx` and `kpi-tile.tsx` are not imported anywhere. Safe to delete; kept only because they may be wanted for a summary panel.
 
 ---
 
@@ -186,15 +183,11 @@ POST /generate
                               safety_signposting, model_version, generated_at}
 ```
 
-### 3.2 Adapter swapping
+### 3.2 The served adapter
 
-`HOPE_GEN_MODEL_ID` (env var) selects which LoRA loads. Three forms:
+Production serves **one pinned adapter** — `h4cdev/qwen3.5-4b-hope-forum-lora`, selected by `HOPE_GEN_MODEL_ID` and locked with `HOPE_MODEL_LOCKED=1`. There is no runtime model switching: the selection is process-global, so a swap would change every facilitator's drafts mid-session after a 15–30 s reload. Changing the model is a deployment action (set the env var, restart the Space).
 
-- HF Hub id with slash: `michaelajao/qwen3.5-4b-hope-forum-lora` → `snapshot_download` + cache to `/data/.cache/huggingface`
-- Local registry id (no slash): `qwen3-4b-hope-only` → look up `MODEL_ID_TO_DIR` in [generation_service.py](../../comment_generation/service/generation_service.py) → `models/<dir>/`
-- Anything else: error at startup
-
-LoRA weights download once on first `/generate`; subsequent requests reuse the in-memory model. Cold-boot is ~30–90s on T4 (base download dominates); warm is sub-second.
+The id resolves two ways: a Hub id with a slash goes through `snapshot_download` and caches to `/data/.cache/huggingface`; a local registry id (no slash) looks up `MODEL_ID_TO_DIR` in `generation_service.py`. Weights load once at startup (`HOPE_PRELOAD_MODEL=1`); cold boot is ~60–90 s on a T4, warm requests are seconds.
 
 ### 3.3 Safety surfaces
 
@@ -221,12 +214,12 @@ SQLite, table per signal kind: `drafts` (every shown draft), `thumbs` (up/down),
 ```
 POST /predict (or /batch)
   │
-  ├─ feature builder: 6 weeks of event history → 50+ engineered features
+  ├─ feature builder: cumulative event history to the horizon → 50+ engineered features
   │    (cumulative logins, inactive streaks, activity ranges, page visits,
   │     bookmark count, reply rate, facilitator contact count, ...)
   │
   ├─ load_winner(score_at_day) → models/winner_T{T}.pkl
-  │    one LightGBM per horizon; T ∈ {7,14,21,28,35,42}
+  │    one LightGBM per horizon; T ∈ {7,14,21,28,35,42,49,56}
   │
   ├─ Platt calibration → models/platt_T{T}.pkl
   │    raw probability → calibrated dropout_risk
@@ -245,9 +238,9 @@ POST /predict (or /batch)
 
 ### 4.2 Why per-horizon models
 
-A single end-of-programme model would weight late-engagement features too heavily for early-week scoring. Six smaller models (one per horizon) means a W1 score has W1-relevant features dominate; W6 score has the late-engagement features dominate. Held-out AUC runs 0.84 (T=7) → 0.90 (T=42) — measured on a temporal hold-out (`effective_start >= 2025-09-01`), per the `model_card_T*.json` shipped with each bundle.
+A single end-of-programme model would weight late-engagement features too heavily for early-week scoring. Eight smaller models (one per horizon) means a W1 score has W1-relevant features dominate; a W8 score has the late-engagement features dominate. Held-out AUC runs 0.845 (T=7) → 0.910 (T=56) — measured on a temporal hold-out (`effective_start >= 2025-09-01`), per the `model_card_T*.json` shipped with each bundle.
 
-The dashboard's week selector (W1–W6) maps each week to one trained horizon. The dashboard caps available weeks at `min(programmeLengthDays/7, 6)` because the trained set has no T=49 model; a 12-week cohort can still be scored but only up to W6 with `note: "horizon_used: 42"`.
+The dashboard's week selector maps each programme week to one trained horizon (`score_at_day = week * 7`), rendering the programme's full shape and disabling weeks that haven't elapsed. Weeks past the last trained horizon (W9+ on a longer cohort) still score, but the service anchors them to T=56 and discloses it (`horizon_used`, `anchored_to_days`); the UI surfaces that with the anchored-week notice.
 
 ### 4.3 Cadence
 
@@ -339,13 +332,13 @@ The HF Space layer adds another auth gate: the Space is **Private**, so every re
 The route list is **not** duplicated here. It is a contract with exactly two
 sources of truth, and a third copy in this file would drift silently:
 
-- [comment_generation/docs/openapi.yaml](../../comment_generation/docs/openapi.yaml) — authoritative machine-readable spec; the dashboard's `src/lib/api/types.ts` is generated from it via `npm run gen:types`
+- `comment_generation/docs/openapi.yaml` — authoritative machine-readable spec; the dashboard's `src/lib/api/types.ts` is generated from it via `npm run gen:types`
 - [INTEGRATION.md §2–§3](INTEGRATION.md) — the same contract written for a platform engineer, with payloads and worked examples
 
 What belongs here is the *shape* of that surface, which the route list does not
 convey:
 
-- **comment_generation (`:8001`)** splits into four groups — generation (`/generate`), HITL capture (`/thumb`, `/event`), participant memory (`/memory/*`), and ops (`/health`, `/version`, `/metrics`, `/admin/model(s)`). Everything that mutates state is HMAC-signed; everything that only reports is open. See §6.
+- **comment_generation (`:8001`)** splits into four groups — generation (`/generate`), HITL capture (`/thumb`, `/event`), participant memory (`/memory/*`), and ops (`/health`, `/version`, `/metrics`). Everything that mutates state is HMAC-signed; everything that only reports is open. See §6.
 - **engagement_ml (`:8000`)** is deliberately narrow: two scoring routes (`/predict`, `/batch`) behind `X-API-Key`, plus open health/version. There is no write surface at all — the service holds no state to write to (§10).
 
 The asymmetry in auth between the two services is a decision, not an accident —
@@ -360,9 +353,9 @@ see §12.1.
 | Cohort bundle | `local/iih-coh*.json` (**committed** — see below) | dashboard | extracted by [`scripts/extract-iih-cohort.mjs`](../scripts/extract-iih-cohort.mjs) from raw txt exports; pseudonymised |
 | Memory store | `/app/outputs/memory.sqlite` | comment_generation | created on first connect via `CREATE TABLE IF NOT EXISTS`; persistent on `/data` for HF Space |
 | HITL store | `/app/outputs/hitl.sqlite` | comment_generation | same lifecycle as memory; sole source for DPO/KTO training data |
-| LoRA adapter | `michaelajao/qwen3.5-4b-hope-forum-lora` (default) | HF Hub (private) | swappable via `HOPE_GEN_MODEL_ID` / picker; downloads to HF cache on first use. Full roster in [OPERATIONS.md](OPERATIONS.md) §2 |
+| Adapter | `h4cdev/qwen3.5-4b-hope-forum-lora` (pinned) | HF Hub (private) | selected by `HOPE_GEN_MODEL_ID`, locked in production; downloads to the HF cache at startup. See [OPERATIONS.md](OPERATIONS.md) §2 |
 | Base model | `Qwen/Qwen3-4B` | HF Hub (public) | downloaded by `transformers.from_pretrained` |
-| Dropout models | `engagement_ml/models/winner_T{7..42}.pkl` | engagement_ml | per-horizon LightGBM; Platt calibration files alongside |
+| Dropout models | `h4cdev/hope-move-engagement-ml` → `winner_T{7..56}.pkl` | HF Hub (private) | per-horizon LightGBM; Platt calibration files alongside; fetched by the Space at container start |
 | Engagement panel | `cumulative_features_panel.parquet` | engagement_ml | optional; comment_generation falls back to request-body engagement when missing |
 
 **The cohort bundles in `local/` are committed and contain real Hope Move
@@ -373,7 +366,7 @@ disclosures. Treat this repository as confidential.
 
 Anything added downstream (the dashboard, the LoRA training) must not
 re-introduce identifiers — see the name-scrub path in
-[`src/generation_utils.py:scrub_first_names`](../../comment_generation/src/generation_utils.py)
+`comment_generation/src/generation_utils.py`
 for the training-side guard.
 
 The raw platform exports the bundles are built from (`data/` in
@@ -386,7 +379,7 @@ repos and must stay that way.
 
 | Failure | Where it's caught | What the facilitator sees |
 | --- | --- | --- |
-| Space down / 5xx | [`classifyGenerateError`](../src/app/cohorts/[cohortId]/drafts.tsx) | "Comment generation is offline" card |
+| Space down / 5xx | [`classifyGenerateError`](../src/app/cohorts/[cohortId]/drafts-helpers.ts) | "Comment generation is offline" card |
 | 401 from upstream | same classifier | "Sign in again" card |
 | Input safety block | comment_generation pipeline | 2 acknowledgement-only drafts + `safety_signposting` string |
 | Kill switch (`HOPE_DISABLE_GENERATION=1`) | comment_generation `/generate` | safe-stub drafts with `model_version: "stub-disabled"` |
@@ -442,6 +435,6 @@ The asymmetry is deliberate: the expensive, stateful component is the one facili
 
 - [INTEGRATION.md](INTEGRATION.md) — for platform engineers integrating Hope Move with the two backing services
 - [OPERATIONS.md](OPERATIONS.md) — deploy paths, model roster + swap/retrain, runbook
-- [comment_generation/docs/openapi.yaml](../../comment_generation/docs/openapi.yaml) — authoritative OpenAPI spec
-- [comment_generation/space/README.md](../../comment_generation/space/README.md) — HF Space deployment specifics
-- [engagement_ml/README.md](../../engagement_ml/README.md) — model research pipeline + evaluation
+- `comment_generation/docs/openapi.yaml` — authoritative OpenAPI spec
+- `comment_generation/space/README.md` — HF Space deployment specifics
+- `engagement_ml/README.md` — model research pipeline + evaluation

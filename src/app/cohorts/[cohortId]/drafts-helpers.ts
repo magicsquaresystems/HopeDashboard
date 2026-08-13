@@ -3,11 +3,9 @@
  * them in a Node environment without dragging in the React/Next tree.
  *
  * These functions exist here exactly so the failure surfaces they own
- * (error classification, model labelling, email gating) get unit-tested
- * directly rather than being verified only by Playwright walking the UI.
+ * (error classification, model labelling) get unit-tested directly
+ * rather than being verified only by Playwright walking the UI.
  */
-
-import type { RiskLevel } from "@/lib/api/dropout";
 
 /**
  * Shape of the error card rendered when /generate fails. The tone drives
@@ -24,11 +22,12 @@ export type GenerateErrorState = {
 export const BUSY_CODE = "generation_busy";
 
 /**
- * Friendly labels for non-SLM ``model_version`` strings we ship from
- * the comment-gen service. Anything not in this map falls through to
- * the namespace-stripped repo id.
+ * Friendly labels for non-SLM ``model_version`` strings the comment-gen
+ * service can return in place of an adapter id: the kill-switch stub,
+ * the safety block, and the error fallback. Anything not in this map is
+ * treated as a Hub adapter id.
  */
-export const MODEL_VERSION_FALLBACKS: Record<string, string> = {
+const MODEL_VERSION_FALLBACKS: Record<string, string> = {
     "stub-disabled": "stub (kill-switch)",
     "safety-block": "safety block",
     "error-fallback": "fallback",
@@ -36,38 +35,17 @@ export const MODEL_VERSION_FALLBACKS: Record<string, string> = {
 };
 
 /**
- * Family-name overrides for token-by-token title-casing. Default
- * behaviour ("smollm3" -> "Smollm3") loses the canonical internal
- * capitalisation; this map preserves the publisher-preferred form.
- * Keys are lower-cased; values are exact replacements applied as the
- * first token of a stripped model id.
- */
-const FAMILY_DISPLAY_OVERRIDES: Record<string, string> = {
-    smollm: "SmolLM",
-    smollm2: "SmolLM2",
-    smollm3: "SmolLM3",
-    smollm4: "SmolLM4",
-    minicpm: "MiniCPM",
-    tinyllama: "TinyLlama",
-};
-
-/**
- * Render the badge label for a draft response's ``model_version`` field.
+ * Render the "Drafted by …" badge label for a response's
+ * ``model_version`` field.
  *
- * Goal: surface the base model identity and training corpus to the
- * facilitator, not the internal roster suffix. "-hope-only" is dropped as
- * UI noise; "-hope-forum" instead shows a "(forum)" tag.
- *
- *  - Hub ids (``namespace/repo``) drop the namespace, the ``-lora``
- *    suffix, the ``-hope-only`` segment, AND training-version tokens
- *    like ``-v5``: ``michaelajao/qwen3-1.7b-hope-only-lora`` →
- *    ``Qwen3 1.7B``; ``michaelajao/qwen3-4b-hope-only-v5-lora`` →
- *    ``Qwen3 4B``. The version is an internal training-iteration tag,
- *    not something a facilitator needs to see.
- *  - Tokens that look like a size (``1.7b``, ``4b``) get an upper-case
- *    ``B``. Other alphabetic tokens are title-cased.
- *  - Non-SLM versions (the kill-switch / safety / fallback strings) get
- *    their friendly mapping from MODEL_VERSION_FALLBACKS.
+ * Production serves one pinned adapter (Qwen3.5-4B), so this is not a
+ * roster formatter any more — it answers "which model wrote this?" for
+ * the adapter id the service reports, which also surfaces a stale
+ * deployment at a glance. Hub ids drop the namespace and the ``-lora``
+ * suffix; the ``-hope-forum`` corpus segment renders as a "(forum)"
+ * tag; size tokens like ``4b`` upper-case the B:
+ * ``h4cdev/qwen3.5-4b-hope-forum-lora`` → ``Qwen3.5 4B (forum)``.
+ * Non-SLM versions map through MODEL_VERSION_FALLBACKS.
  */
 export function formatModelLabel(modelVersion: string): string {
     if (MODEL_VERSION_FALLBACKS[modelVersion]) {
@@ -76,30 +54,21 @@ export function formatModelLabel(modelVersion: string): string {
     const afterSlash = modelVersion.includes("/")
         ? modelVersion.split("/").pop()!
         : modelVersion;
-    // Forum-trained adapters carry a "-hope-forum" segment; surface it as a
-    // "(forum)" suffix to match the picker. "-hope-only" stays a silent strip.
     const isForum = /-hope-forum/.test(afterSlash);
     const stripped = afterSlash
         .replace(/-lora$/, "")
         .replace(/-hope-(?:only|forum)/g, "")
-        // Drop training-iteration version tokens (e.g. "-v5"). Internal
-        // tag; not facilitator-facing.
-        .replace(/-v\d+/g, "");
+        // Corpus-processing tag ("intent-tense cleaned"); internal, not
+        // facilitator-facing.
+        .replace(/-clean\b/g, "");
     const base = stripped
         .split("-")
         .filter(Boolean)
-        .map((part, idx) => {
-            // First-token family-name override preserves canonical
-            // internal capitalisation that title-casing would lose
-            // (e.g. "smollm3" -> "SmolLM3" not "Smollm3").
-            if (idx === 0 && FAMILY_DISPLAY_OVERRIDES[part]) {
-                return FAMILY_DISPLAY_OVERRIDES[part];
-            }
-            // Size tokens like "1.7b", "4b", "0.6b" → upper-case the B.
+        .map((part) => {
+            // Size tokens like "0.6b", "4b" → upper-case the B.
             if (/^\d/.test(part) && part.endsWith("b")) {
                 return part.slice(0, -1) + "B";
             }
-            // Family / other alphabetic tokens — title-case.
             if (/^[a-z]/.test(part)) {
                 return part[0].toUpperCase() + part.slice(1);
             }
@@ -172,41 +141,6 @@ export function classifyGenerateError(message: string): GenerateErrorState {
         title: "Couldn't generate drafts",
         body: message,
     };
-}
-
-/**
- * Deterministic placeholder address for the "Send by email" mailto:
- * link. The ``.invalid`` TLD (RFC 6761) guarantees the address never
- * resolves to a real inbox, so a stray Send during demo/testing can't
- * accidentally email anyone.
- *
- * Production wiring: replace with ``bundle.participants[id].email``
- * once the platform export includes a real email field.
- */
-export function placeholderEmail(
-    participantId: string | null,
-    cohortId: number | string,
-): string | null {
-    if (!participantId) return null;
-    return `participant-${participantId}@cohort-${cohortId}.hope-test.invalid`;
-}
-
-/**
- * Gate the Send-by-email action to disengaged participants. Email is
- * only useful when the participant isn't active in-app — on-track
- * (low-risk) participants get in-app message only. Needs-attention
- * (high) + check-in-soon (medium) qualify.
- *
- * Returns null when the participant doesn't qualify; that hides the
- * "Send by email" menuitem in DraftCard.
- */
-export function emailForDisengaged(
-    participantId: string | null,
-    cohortId: number | string,
-    riskLevel: RiskLevel | undefined,
-): string | null {
-    if (riskLevel !== "high" && riskLevel !== "medium") return null;
-    return placeholderEmail(participantId, cohortId);
 }
 
 /**

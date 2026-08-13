@@ -52,10 +52,27 @@ function shortDate(iso: string): string {
     });
 }
 
-/** First → latest change, or null when there's nothing to compare. */
+/**
+ * Minimum spacing between the first and latest questionnaire before a
+ * delta is shown. Participants sometimes file two questionnaires in one
+ * sitting (verified in the shipped bundles: pairs minutes apart), and a
+ * first→latest arrow over that gap reads as change across the programme
+ * when it is really test–retest noise. A week matches the programme's
+ * own cadence.
+ */
+const WELLBEING_DELTA_MIN_GAP_MS = 7 * DAY_MS;
+
+/** First → latest change, or null when there's nothing to compare or the
+ *  administrations are too close together to call a trend. */
 function wellbeingDelta(results: RealWellbeingResult[]): number | null {
     if (results.length < 2) return null;
-    return results[results.length - 1].metricScore - results[0].metricScore;
+    const first = results[0];
+    const last = results[results.length - 1];
+    const gap =
+        new Date(last.recordedAt).getTime() -
+        new Date(first.recordedAt).getTime();
+    if (gap < WELLBEING_DELTA_MIN_GAP_MS) return null;
+    return last.metricScore - first.metricScore;
 }
 
 export function ParticipantProfile({
@@ -175,6 +192,9 @@ export function ParticipantProfile({
                                           ? "text-risk-hi"
                                           : "text-muted")
                                 }
+                                title={`Change from ${shortDate(
+                                    wellbeing[0].recordedAt,
+                                )} to ${shortDate(latest.recordedAt)}`}
                             >
                                 {delta > 0 ? "↑" : delta < 0 ? "↓" : "→"}
                                 {Math.abs(delta).toFixed(1)}

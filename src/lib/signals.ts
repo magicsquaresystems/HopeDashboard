@@ -1,7 +1,7 @@
 /**
- * Pure helpers over `ParticipantHistory`. The detail panel's metric tiles,
- * the AI-summary card, and the queue's "Last active" line all derive from
- * these functions so the platform-feed swap later changes one file.
+ * Pure helpers over `ParticipantHistory`. The detail panel's metric tiles
+ * and the queue's "Last active" line all derive from these functions so
+ * the platform-feed swap later changes one file.
  *
  * No React imports, no hooks — call from anywhere.
  */
@@ -13,7 +13,6 @@ import type { ParticipantHistory, RiskLevel } from "@/lib/api/dropout";
  *  demo-event back-dating). */
 export const DAY_MS = 86_400_000;
 
-export type EngagementTrend = "Declining" | "Stable" | "Improving";
 export type ActivationLevel = "Low" | "Medium" | "High";
 
 /**
@@ -41,15 +40,25 @@ function sortedTimestamps(history: ParticipantHistory): number[] {
         .sort((a, b) => a - b);
 }
 
-export function daysSinceLastEvent(history: ParticipantHistory): number {
+/**
+ * Whole days between the participant's most recent event and the scoring
+ * window's close. `null` when the participant has no events at all —
+ * "never active" is a different fact from "active N days ago", and the
+ * old fallback of returning `score_at_day` fabricated a day-0 event that
+ * rendered as "Last active 42 days ago" for people who never showed up.
+ */
+export function daysSinceLastEvent(
+    history: ParticipantHistory,
+): number | null {
     const stamps = sortedTimestamps(history);
-    if (stamps.length === 0) return history.score_at_day;
+    if (stamps.length === 0) return null;
     const last = stamps[stamps.length - 1];
     return Math.max(0, Math.floor((scoreWindowEnd(history) - last) / DAY_MS));
 }
 
 export function lastActiveLabel(history: ParticipantHistory): string {
     const d = daysSinceLastEvent(history);
+    if (d === null) return "No activity yet";
     if (d === 0) return "Active today";
     if (d === 1) return "Last active 1 day ago";
     return `Last active ${d} days ago`;
@@ -58,8 +67,14 @@ export function lastActiveLabel(history: ParticipantHistory): string {
 /**
  * Count events of a given `event_type` in a trailing N-day window ending at
  * `score_at_day`. Returns the count and the percentage delta vs. the prior
- * N-day window. Delta is null when the prior window has zero events (the
- * percentage would be undefined).
+ * N-day window.
+ *
+ * Delta is null in two cases where a percentage would mislead:
+ *  - the prior window has zero events (undefined percentage), or
+ *  - the prior window is not fully inside the programme
+ *    (`score_at_day < 2 * nDays`). Events before `effective_start` do not
+ *    exist, so early weeks would compare a full window against a
+ *    truncated one — a flat participant read "+200%" at week 3.
  */
 export function eventsLastNDays(
     history: ParticipantHistory,
@@ -78,58 +93,17 @@ export function eventsLastNDays(
         if (ts >= windowStart && ts < end) count += 1;
         else if (ts >= priorStart && ts < windowStart) prior += 1;
     }
+    const priorWindowComplete = history.score_at_day >= 2 * nDays;
     const deltaPercent =
-        prior === 0 ? null : Math.round(((count - prior) / prior) * 100);
+        !priorWindowComplete || prior === 0
+            ? null
+            : Math.round(((count - prior) / prior) * 100);
     return { count, deltaPercent };
-}
-
-export function distinctActivityTypes(
-    history: ParticipantHistory,
-    nDays: number,
-): number {
-    const end = scoreWindowEnd(history);
-    const windowStart = end - nDays * DAY_MS;
-    const types = new Set<string>();
-    for (const e of history.events) {
-        if (e.event_type !== "activity" || !e.activity_type) continue;
-        const ts = new Date(e.timestamp).getTime();
-        if (ts >= windowStart && ts < end) types.add(e.activity_type);
-    }
-    return types.size;
 }
 
 export function facilitatorContactCount(history: ParticipantHistory): number {
     return history.events.filter((e) => e.event_type === "facilitator_comment")
         .length;
-}
-
-/**
- * Compare event volume in the latest 2-week window vs. the prior 2-week
- * window. Threshold is intentionally generous (15% swing) so "Stable" is
- * the common case, not the rare one.
- */
-export function engagementTrend(history: ParticipantHistory): EngagementTrend {
-    const end = scoreWindowEnd(history);
-    const recent = end - 14 * DAY_MS;
-    const prior = end - 28 * DAY_MS;
-
-    let r = 0;
-    let p = 0;
-    for (const e of history.events) {
-        const ts = new Date(e.timestamp).getTime();
-        if (ts >= recent && ts < end) r += 1;
-        else if (ts >= prior && ts < recent) p += 1;
-    }
-    // Both windows empty AND participant hasn't been seen recently —
-    // they're disengaged, not "stable at zero". Calling it Stable would
-    // misrepresent total silence in the metric tile.
-    if (p === 0 && r === 0)
-        return daysSinceLastEvent(history) >= 14 ? "Declining" : "Stable";
-    if (p === 0) return r > 0 ? "Improving" : "Stable";
-    const delta = (r - p) / p;
-    if (delta < -0.15) return "Declining";
-    if (delta > 0.15) return "Improving";
-    return "Stable";
 }
 
 /**
@@ -171,43 +145,4 @@ export function displayName(participantId: string): string {
     const m = participantId.match(/(\d+)$/);
     if (m) return `P${parseInt(m[1], 10)}`;
     return participantId;
-}
-
-/** A small bundle of derived signals the AI-summary template needs. */
-export type SignalSnapshot = {
-    daysSinceLastEvent: number;
-    daysSinceLastLogin: number;
-    discussionLastWindow: { count: number; deltaPercent: number | null };
-    engagementTrend: EngagementTrend;
-    facilitatorContact: number;
-    distinctActivityTypes14d: number;
-    activation: ActivationLevel;
-    riskLevel: RiskLevel | null;
-};
-
-export function buildSnapshot(
-    history: ParticipantHistory,
-    factors: string[],
-    riskLevel: RiskLevel | null,
-): SignalSnapshot {
-    return {
-        daysSinceLastEvent: daysSinceLastEvent(history),
-        daysSinceLastLogin: (() => {
-            const logins = history.events.filter((e) => e.event_type === "login");
-            if (logins.length === 0) return history.score_at_day;
-            const last = Math.max(
-                ...logins.map((e) => new Date(e.timestamp).getTime()),
-            );
-            return Math.max(
-                0,
-                Math.floor((scoreWindowEnd(history) - last) / DAY_MS),
-            );
-        })(),
-        discussionLastWindow: eventsLastNDays(history, "discussion_post", 14),
-        engagementTrend: engagementTrend(history),
-        facilitatorContact: facilitatorContactCount(history),
-        distinctActivityTypes14d: distinctActivityTypes(history, 14),
-        activation: activationLevel(factors, riskLevel),
-        riskLevel,
-    };
 }

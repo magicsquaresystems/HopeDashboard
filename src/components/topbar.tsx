@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { LogOut } from "lucide-react";
 
 import { useCohortScoring } from "@/lib/hooks/useCohortScoring";
+import { useQueueState } from "@/lib/hooks/useQueueState";
 import { useSessionStatsStore } from "@/lib/store/sessionStatsStore";
+import { isHidden } from "@/lib/queue-state-shared";
 import type { CohortMeta } from "@/lib/cohorts";
 
 type TopbarProps = {
@@ -14,7 +17,10 @@ type TopbarProps = {
 
 export function Topbar({ cohort }: TopbarProps) {
     const { batch, isScoring } = useCohortScoring(cohort.id);
-    const sentThisSession = useSessionStatsStore((s) => s.sentThisSession);
+    const queueState = useQueueState(cohort.id);
+    const sentThisSession = useSessionStatsStore((s) =>
+        s.contactedCount(cohort.id),
+    );
     // Who am I? Now that every thumb and send is attributed to the
     // signed-in account, the facilitator needs to be able to see which
     // account that is — shared machines are normal in this setting, and
@@ -23,12 +29,29 @@ export function Topbar({ cohort }: TopbarProps) {
     const { data: session } = useSession();
     const who = session?.user?.name ?? session?.user?.email ?? null;
 
-    // While a re-score is in flight there are no counts. Rendering `0`
-    // would state — confidently and wrongly — that nobody needs follow-up,
-    // so the pills show a placeholder until real numbers land.
-    const data = batch.data;
-    const high = data?.high ?? 0;
-    const medium = data?.medium ?? 0;
+    // Frozen at mount for the same reason as the queue's clock: snooze
+    // expiry compared against a ticking now would move the counts under
+    // the facilitator mid-session.
+    const [now] = useState(() => Date.now());
+
+    // Derived from the per-participant predictions, not the response's
+    // aggregate high/medium fields, for two reasons: snoozed/dismissed
+    // participants must not be counted (the queue hides them, and a
+    // topbar that keeps counting them contradicts the list beside it),
+    // and deriving from the same rows the queue renders means the two
+    // can never disagree about who was scored.
+    const { high, medium } = useMemo(() => {
+        const preds = batch.data?.predictions ?? [];
+        const state = queueState.data;
+        let high = 0;
+        let medium = 0;
+        for (const p of preds) {
+            if (state && isHidden(state, p.participant_id, now)) continue;
+            if (p.risk_level === "high") high += 1;
+            else if (p.risk_level === "medium") medium += 1;
+        }
+        return { high, medium };
+    }, [batch.data?.predictions, queueState.data, now]);
     const needsFollowUp = high + medium;
 
     return (

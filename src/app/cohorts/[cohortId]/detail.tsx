@@ -379,10 +379,12 @@ function DetailMetrics({
     const discussion = eventsLastNDays(history, "discussion_post", 14);
     const facilitatorTouches = facilitatorContactCount(history);
 
+    // `null` means no events at all — worse than any "N days ago", so it
+    // shares the negative tone with long silences.
     const lastActiveTone =
         lastActiveDays === 0
             ? "positive"
-            : lastActiveDays >= 7
+            : lastActiveDays === null || lastActiveDays >= 7
               ? "negative"
               : "neutral";
     const discussionTone =
@@ -405,11 +407,17 @@ function DetailMetrics({
             <MetricTile
                 label="Last active"
                 value={
-                    lastActiveDays === 0
-                        ? "Today"
-                        : `${lastActiveDays} day${lastActiveDays === 1 ? "" : "s"} ago`
+                    lastActiveDays === null
+                        ? "Never"
+                        : lastActiveDays === 0
+                          ? "Today"
+                          : `${lastActiveDays} day${lastActiveDays === 1 ? "" : "s"} ago`
                 }
-                delta="as at selected week"
+                delta={
+                    lastActiveDays === null
+                        ? "no activity recorded"
+                        : "as at selected week"
+                }
                 tone={lastActiveTone}
             />
             <MetricTile

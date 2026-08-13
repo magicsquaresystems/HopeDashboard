@@ -6,17 +6,28 @@ dropout risk, read what each person posted, and send a warm reply —
 starting from an AI-drafted suggestion they can edit or discard.
 
 The dashboard holds no models and no participant database. It is a
-Next.js app that reads cohort bundles from disk and calls two FastAPI
-services:
+Next.js app that reads cohort bundles and calls two FastAPI services:
 
-| Service | Repo | Port | What it does |
+| Service | Port | Production home | What it does |
 | --- | --- | --- | --- |
-| comment service | [`comment_generation`](https://github.com/michaelajao/comment_generation) | 8001 | Persona-conditioned reply drafts, participant memory, HITL capture |
-| risk service (engagement_ml) | [`engagement_ml`](https://github.com/michaelajao/engagement_ml) | 8000 | Weekly dropout-risk scores + contributing factors |
+| comment service | 8001 | `https://h4cdev-hope-comment-gen-api.hf.space` | Persona-conditioned reply drafts, participant memory, HITL capture |
+| risk service | 8000 | `https://h4cdev-hope-dropout-api.hf.space` | Weekly dropout-risk scores + contributing factors |
+
+Both production services run as private Hugging Face Spaces under the
+`h4cdev` account. Their source lives in the `comment_generation` and
+`engagement_ml` repositories.
 
 Every backend call goes through the dashboard's own server-side proxy
 routes (`src/app/api/proxy/**`), which inject the credentials. The
 browser never sees a secret.
+
+Cohort data currently ships as extracted bundles under `local/`
+(see *Participant data* below). The platform team is building an API
+to replace this; when it lands, an adapter in the server data layer
+(`src/lib/server/cohort-data.ts`) will convert its payloads into the
+same bundle shape the UI already consumes, so the change stays invisible
+to components. The expected shape is documented in
+[docs/INTEGRATION.md](docs/INTEGRATION.md).
 
 ## Quickstart — the whole stack, one command
 
@@ -62,46 +73,54 @@ documents every variable. The ones that decide where the backends live:
 | `HOPE_API_SECRET` | HMAC secret for signing comment-service writes; must match the service |
 | `HOPE_RISK_API_KEY` | `X-API-Key` for the risk service; must match the service |
 | `HF_TOKEN` | Read-scoped HF token — required when the backends are private HF Spaces |
-| `AUTH_SECRET` | NextAuth v5 signing key (`npx auth secret`) |
-| `FACILITATOR_EMAILS` | Comma-separated allowlist (empty = allow any email in dev) |
+| `AUTH_SECRET` | NextAuth v5 signing key (`npx auth secret`) — **required in production**; without it every `/api/auth/*` route returns 500 |
+| `HOPE_HANDOFF_SECRET` | Verifies the signed hand-off token facilitators arrive with; must match the platform |
 
-Three ways to point at the backends:
+Two ways to point at the backends:
 
 | Setup | `COMMENT_GEN_URL` | When |
 | --- | --- | --- |
 | Compose stack | `http://comment-api:8001` (set for you) | Default local development |
-| Private HF Spaces | `https://<owner>-hope-comment-gen-api.hf.space` | Hosted; also set `HF_TOKEN` |
-| HPC + SSH tunnel | `http://localhost:8011` | Maintainer-only — see [docs/OPERATIONS.md](docs/OPERATIONS.md) |
+| Private HF Spaces | `https://h4cdev-hope-comment-gen-api.hf.space` | Production; also set `HF_TOKEN` |
 
 **On ports:** the comment service listens on **8001** and the risk
 service on **8000** everywhere — locally, in compose, and in their
-container images. The **8011** you see in the HPC path is not a
-different service: `:8001` is taken by JupyterHub on that machine, so
-the service is bound to `:8011` there and the SSH tunnel maps it to
-`localhost:8011`. Hosted HF Spaces front both services on `:443`.
+container images. Hosted HF Spaces front both services on `:443`.
 
 ## Auth
 
-NextAuth v5 with the **dev-allowlist Credentials provider**. Set
-`FACILITATOR_EMAILS` to a comma-separated allowlist; empty allows any
-email in dev. `AUTH_MODE=open` surfaces a "Testing mode" pill in the
-topbar — set `AUTH_MODE=allowlist` for a production posture.
+Sign-in is **platform hand-off only**. The Hope Move platform links a
+facilitator to `/enter?token=<signed>` with a short-lived token carrying
+their identity; `HOPE_HANDOFF_SECRET` verifies the signature
+(`src/lib/auth/handoff.ts`). There is no email form and no
+direct-credentials provider — the login page exists only to explain
+where to go when a hand-off failed or the URL was opened directly.
 
-Magic-link via Nodemailer is intentionally not wired in this build: it
-pulls Node-only modules into the Edge runtime. Re-introduce it through
-the documented Auth.js Edge/Node split when configuring SMTP.
+`AUTH_MODE` governs cohort visibility for facilitators with no explicit
+assignment: `open` shows every cohort (local development), `allowlist`
+shows none until assigned (production). Cohort assignments come from
+the `facilitator_cohorts` table when `DATABASE_URL` is set, else from
+`FACILITATOR_COHORTS` in the environment.
 
-For local work without HMAC, run the backends with
-`HOPE_API_AUTH=disabled`.
+For local development there is no platform to arrive from — mint a test
+hand-off link with `node scripts/mint-handoff-token.mjs`. To run the
+backends without HMAC locally, set `HOPE_API_AUTH=disabled` on both
+sides.
 
 ## Participant data
 
 `local/iih-coh*.json` contain **real cohort data** from the HOPE
 platform. Display names are pseudonymised (`P1`, `P2`, …) but the post
 free-text is genuine participant writing, including health disclosures.
-Treat this repository as confidential; do not display raw bundles on a
-shared screen. Regenerate bundles from platform exports with
-`scripts/extract-iih-cohort.mjs`.
+**This repository must remain private** and its contents treated as
+confidential; do not display raw bundles on a shared screen. Regenerate
+bundles from platform exports with `scripts/extract-iih-cohort.mjs`.
+
+These bundles are an interim data source. The platform API replacing
+them delivers the same underlying records; the conversion into the
+bundle shape happens server-side in `src/lib/server/cohort-data.ts`,
+and the bundle contract is documented in
+[docs/INTEGRATION.md](docs/INTEGRATION.md).
 
 ## Development
 
@@ -113,8 +132,8 @@ npm run gen:types     # regenerate src/lib/api/types.ts from the OpenAPI spec
 ```
 
 CI runs lint, typecheck, and build on every push and pull request
-(`.github/workflows/ci.yml`). There is no unit-test suite; the end-to-end
-smoke below is the functional check.
+(`.github/workflows/ci.yml`). Unit tests run with `npm test` (Vitest);
+the end-to-end smoke below is the functional check against a live stack.
 
 The API contract is owned by `comment_generation/docs/openapi.yaml`.
 After any change there, run `npm run gen:types` and commit the

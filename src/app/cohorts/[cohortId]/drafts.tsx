@@ -34,6 +34,7 @@ import {
     scoreAtDay as scoreAtDayForWeek,
     useScoringStore,
 } from "@/lib/store/scoringStore";
+import { useSessionStatsStore } from "@/lib/store/sessionStatsStore";
 import { useUiStore } from "@/lib/store/uiStore";
 import { DAY_MS, daysSinceLastEvent, scoreWindowEnd } from "@/lib/signals";
 import type { CohortMeta } from "@/lib/cohorts";
@@ -268,13 +269,17 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
             },
             {
                 // Mark the participant as contacted so colleagues on this
-                // cohort see it and don't message them again. Fired here
-                // rather than inside `useEvent` because EventRequest
+                // cohort see it and don't message them again, and record
+                // the contact for the topbar's session stat. Both fired
+                // here rather than inside `useEvent` because EventRequest
                 // carries neither participant nor cohort id — only this
                 // component knows who the reply went to.
                 onSuccess: () => {
                     if (!participantId) return;
                     queueOp.mutate({ op: "contacted", participantId, action });
+                    useSessionStatsStore
+                        .getState()
+                        .recordContact(cohort.id, participantId);
                 },
             },
         );

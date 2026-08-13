@@ -1,19 +1,28 @@
 # Hope Move integration guide
 
-For platform engineers wiring the two backing services **directly into
-the Hope Move platform** — i.e. calling `/predict` and `/generate` from
-your own product rather than through the facilitator dashboard.
+For platform engineers integrating with this system. Three integration
+surfaces live here:
+
+1. **engagement_ml** — calling `/predict` and `/batch` for dropout risk
+   (§2)
+2. **comment_generation** — calling `/generate` and the memory/HITL
+   endpoints for reply drafting (§3–§6)
+3. **Cohort data** — the shape the dashboard needs from the platform's
+   own API, replacing the interim bundle files (§7)
 
 This is the wire contract only. If you want to run the system as shipped
 (dashboard + both services), start at the [README](../README.md) instead;
 to host it, see [OPERATIONS.md](OPERATIONS.md).
 
 Two services. Independent. Stateless from the platform's perspective.
+Both run in production as private HF Spaces under the `h4cdev` account;
+their source lives in the `engagement_ml` and `comment_generation`
+repositories.
 
-| Service | Repo | Default port | Purpose |
-| --- | --- | --- | --- |
-| **engagement_ml** | [`engagement_ml`](https://github.com/michaelajao/engagement_ml) | 8000 | Dropout-risk prediction. LightGBM + Platt calibration + TreeSHAP. |
-| **comment_generation** | [`comment_generation`](https://github.com/michaelajao/comment_generation) | 8001 | Persona-conditioned reply drafting (2–3 drafts for activity posts, 1 for forum/Discussion replies). Holds memory of past posts + HITL log. |
+| Service | Default port | Purpose |
+| --- | --- | --- |
+| **engagement_ml** | 8000 | Dropout-risk prediction. LightGBM + Platt calibration + TreeSHAP. |
+| **comment_generation** | 8001 | Persona-conditioned reply drafting (2–3 drafts for activity posts, 1 for forum/Discussion replies). Holds memory of past posts + HITL log. |
 
 ---
 
@@ -113,11 +122,11 @@ token lands on a page explaining the link expired; no session is created.
 
 ### When to call
 
-Per participant, **weekly** (or whenever the platform's scoring cadence triggers). Not per-event. The model's feature builder aggregates 6 weeks of event history into a single score; calling it more often than weekly wastes compute and produces noisy week-over-week values.
+Per participant, **weekly** (or whenever the platform's scoring cadence triggers). Not per-event. The model's feature builder aggregates cumulative event history up to the scoring horizon into a single score; calling it more often than weekly wastes compute and produces noisy week-over-week values.
 
 ### Production cadence — recommended pattern
 
-The model is trained at fixed horizons `T ∈ {7, 14, 21, 28, 35, 42}`. Production should follow a **weekly batch + on-demand refresh** pattern:
+The model is trained at fixed horizons `T ∈ {7, 14, 21, 28, 35, 42, 49, 56}`. Production should follow a **weekly batch + on-demand refresh** pattern:
 
 ```text
 Mon 06:00 cron (per cohort)
@@ -176,7 +185,7 @@ The dashboard in this repo simulates the read side (compute-on-demand with a 1-d
 - `timestamp` — **must include a tz designator** (`Z` or `+HH:MM`). Naive datetimes are rejected
 - Events outside `[effective_start, effective_start + score_at_day)` are rejected, not silently dropped
 - `event_type` is one of: `activity`, `login`, `page_visit`, `bookmark`, `discussion_post`, `facilitator_comment`
-- `score_at_day` is the trained horizon. Use the supported set: `{7, 14, 21, 28, 35, 42}`. Values > 42 are anchored at 42 and disclosed in the response
+- `score_at_day` is the trained horizon. Use the supported set: `{7, 14, 21, 28, 35, 42, 49, 56}`. Values > 56 are anchored at 56 and disclosed in the response (`horizon_used`, `anchored_to_days`, `note`)
 - `cohort_facilitator_density` is the proportion of cohort members who received any facilitator comment in the score window. Platform computes this directly from its facilitator-comment table
 
 ### Response
@@ -276,7 +285,7 @@ The `engagement` block is optional but worth passing — it's how the SLM gets r
   ],
   "memory_used": true,
   "engagement_used": true,
-  "model_version": "qwen3-4b-hope-only-lora@abc123",
+  "model_version": "h4cdev/qwen3.5-4b-hope-forum-lora",
   "generated_at": "2026-05-26T10:00:00Z"
 }
 ```
@@ -388,7 +397,7 @@ For the weekly risk view (cohort dashboard / facilitator triage list):
 
 Both services are stateless apart from comment-gen's SQLite memory store (`outputs/memory.sqlite`) + HITL log (`outputs/hitl.sqlite`). Mount these on a persistent volume in production; otherwise data resets on container restart.
 
-engagement_ml ships its model bundle (~50 MB, all `winner_T{T}.pkl` files) inside the container image — no model-fetch step at startup. comment-gen downloads the configured LoRA adapter at startup via `HF_TOKEN`; cold start is 60–90 s on a fresh container, 2–5 s subsequently.
+Neither service bakes weights into its image. engagement_ml fetches its per-horizon bundles (~12 MB, eight horizons × five files) from the private model repo `h4cdev/hope-move-engagement-ml` at container start; comment-gen downloads the configured LoRA adapter at startup. **Both therefore need a read-scoped `HF_TOKEN`.** Cold start is 60–90 s for comment-gen on a fresh container (adapter load), a few seconds for engagement_ml.
 
 ### Required env vars
 
@@ -397,8 +406,9 @@ engagement_ml ships its model bundle (~50 MB, all `winner_T{T}.pkl` files) insid
 | `HOPE_API_AUTH` | both | `enabled` (prod) or `disabled` (local smoke) |
 | `HOPE_RISK_API_KEY` | engagement_ml | 32-byte hex API key for X-API-Key auth |
 | `HOPE_API_SECRET` | comment-gen | 32-byte hex secret for HMAC auth |
-| `HF_TOKEN` | comment-gen | HF read token; only needed if the configured adapter is in a private repo |
-| `HOPE_GEN_MODEL_ID` | comment-gen | Which fine-tuned adapter to load. Default: `michaelajao/qwen3.5-4b-hope-forum-lora` |
+| `HF_TOKEN` | both | HF read token for the private model/adapter repos |
+| `HOPE_GEN_MODEL_ID` | comment-gen | Which fine-tuned adapter to load. Default: `h4cdev/qwen3.5-4b-hope-forum-lora` |
+| `HOPE_MODEL_LOCKED` | comment-gen | `1` on shared deployments — the adapter is pinned |
 | `HOPE_DROPOUT_URL` | comment-gen | Optional. URL of engagement_ml's `/predict` for the engagement-aware prompt path. Set to your risk-API base URL |
 
 ---
@@ -433,19 +443,281 @@ engagement_ml ships its model bundle (~50 MB, all `winner_T{T}.pkl` files) insid
 - `POST /text/coaching` — one tactical suggestion for the facilitator
 - `POST /text/polish` — rephrase a facilitator's own draft note
 
-*Model selection* — backs the dashboard's model picker
-
-- `GET /admin/models` — current adapter + selectable roster. **Open** (no HMAC), so the picker can populate before any signed call
-- `POST /admin/model` — hot-swap the live adapter. HMAC-signed. Server-side global: it changes the model for **every** caller, and the first request after a swap pays a 15–30 s reload
-
 *Ops*
 
 - `GET /health`, `GET /version`, `GET /metrics` (Prometheus)
 - `POST /sync/backfill-from-json` — returns 501; use the standalone CLI
 
 The authoritative machine-readable spec is
-[`comment_generation/docs/openapi.yaml`](../../comment_generation/docs/openapi.yaml)
+`comment_generation/docs/openapi.yaml`
 — the dashboard's `src/lib/api/types.ts` is generated from it (`npm run gen:types`),
 so it and the client cannot drift. The Pydantic models behind it are
-[`comment_generation/service/models.py`](../../comment_generation/service/models.py)
-and [`engagement_ml/deploy/api/schemas.py`](../../engagement_ml/deploy/api/schemas.py).
+`comment_generation/service/models.py`
+and `engagement_ml/deploy/api/schemas.py`.
+
+---
+
+## 7. Cohort data — what the dashboard needs from the platform
+
+The dashboard currently reads cohort data from extracted bundle files
+(`local/iih-coh*.json`, produced by `scripts/extract-iih-cohort.mjs` from
+the platform's raw exports). Those are an **interim data source**: the
+platform API replacing them delivers the same underlying records live.
+This section is the contract that API needs to satisfy.
+
+### 7.1 Direction of travel
+
+The platform serves whatever shape is natural to it; the **dashboard
+converts server-side** into the `CohortBundle` shape below, in
+`src/lib/server/cohort-data.ts`. UI components never see platform JSON —
+they consume `CohortBundle` (and the `ParticipantHistory` / `Profile`
+shapes derived from it in `src/lib/realCohort.ts`), which is what makes
+the swap invisible to the rest of the app.
+
+When the API lands, the loader splits behind the existing module: the
+file loader moves to a `sources/` implementation and a pure
+`toCohortBundle(payload)` converter joins it, selected by an env var —
+the same pattern `db.ts` and `assignments.ts` already use. One call site
+changes (`src/app/api/cohort-bundle/route.ts` gains an `await`); nothing
+else moves. The conversion being a pure function matters: it can be
+unit-tested against a captured API payload with no network, which is
+where the Vitest suite grows next.
+
+### 7.2 The contract — `CohortBundle`
+
+Verbatim from `src/lib/server/cohort-data.ts` (the module is the source
+of truth; if this section and the code disagree, the code wins):
+
+```ts
+export type RealEvent = {
+    timestamp: string;
+    event_type: string;
+    activity_type?: string;
+    words_written?: number;
+    description?: string | null;
+    /** Forum topic id for `discussion_post` events — links the post to
+     * its thread in `CohortBundle.discussionThreads`. Absent on
+     * non-discussion events. */
+    topicId?: number;
+    /** Human-readable page name for `page_visit` / `bookmark` events. */
+    page_title?: string;
+    /** Platform path for `page_visit` / `bookmark` events. */
+    page_url?: string;
+    /** Visit count for this URL (see §7.4 on rollups). */
+    hits?: number;
+    /** Per-URL average dwell. Unit undocumented in the export — not
+     * rendered until the platform confirms. */
+    avg_duration?: number;
+    /** Platform activity id for `activity` events. Joins
+     * `priorFacilitatorReplies[].activityId`, and is forwarded to
+     * comment-gen's /generate for memory dedup. */
+    activity_id?: number;
+};
+
+export type RealThreadReply = {
+    alias: string;
+    role: "facilitator" | "participant";
+    text: string;
+    recordedAt: string;
+};
+
+export type RealDiscussionThread = {
+    title: string;
+    replies: RealThreadReply[];
+};
+
+export type RealFacilitatorReply = {
+    activityId: number;
+    activityType: string;
+    text: string;
+    recordedAt: string | null;
+};
+
+/** One SWEMWBS questionnaire result. `metricScore` is the calibrated
+ * 7–35 scale value (the one worth trending); `rawScore` is the
+ * unweighted item sum. */
+export type RealWellbeingResult = {
+    recordedAt: string;
+    format: string;
+    rawScore: number | null;
+    metricScore: number;
+};
+
+export type RealInterviewItem = {
+    question: string;
+    answer: string;
+};
+
+export type RealParticipant = {
+    participant_id: string;
+    displayName: string;
+    bio: string;
+    interview: RealInterviewItem[];
+    firstName: string | null;
+    startedAt: string;
+    finishedAt: string | null;
+    events: RealEvent[];
+    priorFacilitatorReplies: RealFacilitatorReply[];
+    activityCount: number;
+    /** Chronological SWEMWBS results, oldest first. Empty array (never
+     * undefined) when the participant filed none. */
+    wellbeing: RealWellbeingResult[];
+};
+
+export type CohortBundle = {
+    cohort: {
+        id: number;
+        code: string;
+        moduleId: number;
+        moduleName: string;
+        effectiveStart: string;
+        /** Programme length in days. Multiple of 7. */
+        programmeLengthDays: number;
+    };
+    participants: RealParticipant[];
+    /** Forum threads keyed by topic id (string keys). `undefined` means
+     * "no forum data". */
+    discussionThreads?: Record<string, RealDiscussionThread>;
+};
+```
+
+### 7.3 Invariants the type system cannot express
+
+These exist only as code today; an API payload violating them produces
+wrong numbers or hard failures, not type errors:
+
+- **`event_type`** is one of `activity`, `login`, `page_visit`,
+  `bookmark`, `discussion_post`, `facilitator_comment`.
+- **Every timestamp carries a tz designator** (`Z` or `+HH:MM`). The
+  dashboard's `ensureUtc()` appends `Z` to naive datetimes as defence in
+  depth, but that is a guess, not permission — engagement_ml rejects
+  naive datetimes outright.
+- **`topicId` keys into `discussionThreads` as a string** — the record
+  is string-keyed, and the dashboard does `String(topicId)` on lookup.
+- **`activity_id` joins `priorFacilitatorReplies[].activityId`** and is
+  forwarded to comment-gen for memory dedup; ids must be stable across
+  fetches.
+- **`programmeLengthDays` is a multiple of 7** and must never be lower
+  than any `score_at_day` the UI can request for the cohort —
+  engagement_ml 422s on `score_at_day > programme_length_days`
+  (`src/lib/realCohort.ts` documents the incident).
+- **`wellbeing[].metricScore` is the calibrated SWEMWBS 7–35 value**;
+  `rawScore` may be null. Results ordered oldest first.
+- **Display names arrive already pseudonymised** (`P1`, `P2`, …). The
+  dashboard renders what it is given and does not scrub.
+- **`participants[].events` is the complete event history** for the
+  enrolment; the dashboard truncates to the selected scoring window
+  itself. Do not pre-filter by date.
+
+### 7.4 Fix the page-visit rollup while replacing the source
+
+The current export delivers `page_visit` as a **per-URL rollup stamped
+at the latest visit** carrying a total `hits` count. That loses the
+daily shape: 36 reads spread over five weeks render as one day, and the
+whole rollup disappears from any replayed week before its last visit.
+The API should deliver page visits **per day** (or per visit) with the
+timestamp of the activity they describe; `hits` then counts that day's
+reads. The `RealEvent` shape does not change — only the granularity.
+
+### 7.5 Reference implementation and worked example
+
+`scripts/extract-iih-cohort.mjs` already performs exactly this
+conversion from the platform's raw export files — treat it as the
+executable field-mapping spec. The data-flow picture (who consumes what
+downstream) is [ARCHITECTURE.md §2.3](ARCHITECTURE.md).
+
+Abbreviated example (two participants, one thread):
+
+```json
+{
+  "cohort": {
+    "id": 1680,
+    "code": "IIH-COH12-110226",
+    "moduleId": 337,
+    "moduleName": "People living with IIH 2025 - V1",
+    "effectiveStart": "2026-02-11T00:00:00Z",
+    "programmeLengthDays": 42
+  },
+  "participants": [
+    {
+      "participant_id": "101746",
+      "displayName": "P1",
+      "bio": "",
+      "interview": [],
+      "firstName": null,
+      "startedAt": "2026-02-11T09:14:00Z",
+      "finishedAt": null,
+      "events": [
+        { "timestamp": "2026-02-12T18:03:00Z", "event_type": "login" },
+        {
+          "timestamp": "2026-02-13T10:21:00Z",
+          "event_type": "activity",
+          "activity_type": "GoalSetting",
+          "words_written": 42,
+          "description": "This week I want to…",
+          "activity_id": 88123
+        },
+        {
+          "timestamp": "2026-02-14T20:40:00Z",
+          "event_type": "discussion_post",
+          "description": "Hello everyone…",
+          "topicId": 501
+        }
+      ],
+      "priorFacilitatorReplies": [
+        {
+          "activityId": 88123,
+          "activityType": "GoalSetting",
+          "text": "That sounds like a great first step…",
+          "recordedAt": "2026-02-13T14:02:00Z"
+        }
+      ],
+      "activityCount": 1,
+      "wellbeing": [
+        {
+          "recordedAt": "2026-02-11T09:20:00Z",
+          "format": "SWEMWBS",
+          "rawScore": 21,
+          "metricScore": 19.98
+        }
+      ]
+    },
+    {
+      "participant_id": "101747",
+      "displayName": "P2",
+      "bio": "",
+      "interview": [],
+      "firstName": null,
+      "startedAt": "2026-02-11T11:02:00Z",
+      "finishedAt": null,
+      "events": [],
+      "priorFacilitatorReplies": [],
+      "activityCount": 0,
+      "wellbeing": []
+    }
+  ],
+  "discussionThreads": {
+    "501": {
+      "title": "Introduce yourself",
+      "replies": [
+        {
+          "alias": "Facilitator",
+          "role": "facilitator",
+          "text": "Welcome everyone…",
+          "recordedAt": "2026-02-11T08:00:00Z"
+        }
+      ]
+    }
+  }
+}
+```
+
+### 7.6 Stability
+
+`CohortBundle` is the frozen seam. **Adding** fields is safe — all
+consumers ignore unknown keys. **Removing or retyping** a field is a
+breaking change that requires a coordinated dashboard release. The same
+platform API is also expected to eventually own the cohort registry
+(`src/lib/cohorts.ts`) and facilitator↔cohort assignments
+(`src/lib/server/assignments.ts` carries the matching `FUTURE:` note) —
+keep the three surfaces versioned together.

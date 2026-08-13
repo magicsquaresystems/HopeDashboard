@@ -37,15 +37,9 @@ import { Input } from "@/components/ui/input";
 import { AnchoredWeekNotice } from "@/components/anchored-week-notice";
 import { QueueItem } from "@/components/queue-item";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCohortBatch } from "@/lib/hooks/api";
-import { useCohortBundle } from "@/lib/hooks/useCohortBundle";
+import { useCohortScoring } from "@/lib/hooks/useCohortScoring";
 import { useQueueLayoutStore } from "@/lib/store/queueLayoutStore";
-import { bundleParticipantIds, bundleToHistory } from "@/lib/realCohort";
-import {
-    isAnchoredWeek,
-    scoreAtDay as scoreAtDayForWeek,
-    useScoringStore,
-} from "@/lib/store/scoringStore";
+import { isAnchoredWeek, useScoringStore } from "@/lib/store/scoringStore";
 import { useUiStore } from "@/lib/store/uiStore";
 import { useQueueOp, useQueueState } from "@/lib/hooks/useQueueState";
 import { agoLabel, shortActor } from "@/lib/queue-state-shared";
@@ -75,19 +69,12 @@ function useMountTime(): number {
 }
 
 export function Queue({ cohort }: { cohort: CohortMeta }) {
-    const bundle = useCohortBundle(cohort.id);
     const scoreAtWeek = useScoringStore((s) => s.scoreAtWeek);
-    const scoreAt = scoreAtDayForWeek(scoreAtWeek);
-    const histories: ParticipantHistory[] = useMemo(() => {
-        if (!bundle.data) return [];
-        // Real bundle present — build histories from real events up to
-        // the currently-selected programme week. programmeLengthDays
-        // comes from the cohort bundle so the API gets cohort-true
-        // metadata instead of a 42-day default.
-        return bundleParticipantIds(bundle.data)
-            .map((id) => bundleToHistory(bundle.data!, id, scoreAt))
-            .filter((h): h is ParticipantHistory => h !== null);
-    }, [bundle.data, scoreAt]);
+    // Histories and the batch come from the shared scoring hook — the
+    // same instance the topbar reads, so the two can never disagree on
+    // what was scored. The hook also withholds scoring entirely while
+    // the cohort is under a week old (`notStarted`).
+    const { batch, histories, notStarted } = useCohortScoring(cohort.id);
 
     const histLookup = useMemo(() => {
         const m = new Map<string, ParticipantHistory>();
@@ -95,7 +82,7 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
         return m;
     }, [histories]);
 
-    const { data, isLoading, error } = useCohortBatch(histories, cohort.id);
+    const { data, isLoading, error } = batch;
     const selectedId = useUiStore((s) => s.selectedParticipantId);
     const select = useUiStore((s) => s.selectParticipant);
     // Shared across facilitators — see useQueueState. Another
@@ -249,7 +236,14 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                         Failed to load: {String((error as Error).message)}
                     </p>
                 )}
-                {visible.length === 0 && !isLoading && !error && (
+                {notStarted && !isLoading && !error && (
+                    <p className="px-1 py-4 text-center text-xs text-muted">
+                        This cohort started less than a week ago. Scoring
+                        opens once the first week completes — the model
+                        needs a full week of behaviour to read.
+                    </p>
+                )}
+                {!notStarted && visible.length === 0 && !isLoading && !error && (
                     <p className="px-1 py-4 text-center text-xs text-muted">
                         No participants match the current filter.
                     </p>

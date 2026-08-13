@@ -21,19 +21,23 @@ import { create } from "zustand";
  *    (Each week is cumulative — week 2 scores days 0..13, i.e. weeks 1
  *    *and* 2 — so "weeks with data" is a simple ceiling, not a range.)
  *
- * 3. **Trained horizons** — engagement_ml ships bundles only at
- *    T ∈ {7,14,21,28,35,42}. Past that the service still answers, but it
- *    anchors the score to days 0..41 and says so in the response
+ * 3. **Trained horizons** — engagement_ml ships bundles at
+ *    T ∈ {7,14,21,28,35,42,49,56}. Past that the service still answers,
+ *    but it anchors the score to days 0..55 and says so in the response
  *    (`horizon_used`, `anchored_to_days`, `note`). Verified live against
- *    the deployed Space. So weeks 7+ of an 8-week module are selectable
+ *    the deployed Space. So weeks 9+ of a longer programme are selectable
  *    and honest — the UI just has to disclose the anchoring rather than
- *    present a W8 score as if the model had been trained for it.
+ *    present the score as if the model had been trained for that week.
  */
 
-/** Set of horizons engagement_ml ships bundles for. */
-export const MODEL_HORIZONS_DAYS = [7, 14, 21, 28, 35, 42] as const;
-export const MODEL_MAX_HORIZON_DAYS = 42;
-export const MODEL_MAX_WEEK = 6;
+/**
+ * Hard-coded rather than read from `/model/info` (which already reports
+ * `horizons[]`, see `useRiskModelInfo`) because `isAnchoredWeek()` runs
+ * in render paths that cannot tolerate a loading state. Keep in step
+ * with the horizons the deployed service serves.
+ */
+export const MODEL_MAX_HORIZON_DAYS = 56;
+export const MODEL_MAX_WEEK = 8;
 
 /**
  * Sanity ceiling on programme length. Nothing in the platform enforces a
@@ -50,7 +54,14 @@ export const MAX_PROGRAMME_WEEK = 16;
  */
 export type ProgrammeWeek = number;
 
-export const DEFAULT_PROGRAMME_WEEK: ProgrammeWeek = MODEL_MAX_WEEK;
+/**
+ * Landing week when a cohort opens. A literal, deliberately NOT derived
+ * from MODEL_MAX_WEEK: the store initialises before WeekSelector's clamp
+ * runs, so this value fires the first /batch. Deriving it from the model
+ * ceiling made every cohort open with one wasted request at a week the
+ * cohort may not have.
+ */
+const DEFAULT_PROGRAMME_WEEK: ProgrammeWeek = 6;
 
 const DAY_MS = 86_400_000;
 
@@ -60,7 +71,7 @@ export function scoreAtDay(week: ProgrammeWeek): number {
 }
 
 /** True when this week is past the model's trained horizons and the
- *  service will anchor the score back to T=42. */
+ *  service will anchor the score back to the last trained one. */
 export function isAnchoredWeek(week: ProgrammeWeek): boolean {
     return scoreAtDay(week) > MODEL_MAX_HORIZON_DAYS;
 }
@@ -88,11 +99,13 @@ export function programmeWeeks(programmeLengthDays: number): ProgrammeWeek[] {
  * asks the model about days 0..(7N-1), so week N needs 7N days of
  * history behind it. Partial weeks are excluded — a half-finished week
  * looks like a drop in engagement to the model, not a week in progress.
+ * Week 1 therefore unlocks on day 7, and a cohort on days 0–6 has zero
+ * scoreable weeks; the selector renders every pill disabled with a
+ * "first week in progress" note rather than scoring a window the model
+ * would misread as disengagement.
  *
- * Floors at 1 so a cohort on day 3 still renders a usable selector; the
- * queue's own empty state covers the "nothing yet" case. Clamped to the
- * programme's own length: a finished cohort doesn't keep accruing weeks
- * forever.
+ * Clamped to the programme's own length: a finished cohort doesn't keep
+ * accruing weeks forever.
  */
 export function weeksWithData(
     programmeLengthDays: number,
@@ -104,7 +117,7 @@ export function weeksWithData(
     if (!Number.isFinite(startMs)) return total;
     const elapsedDays = Math.floor((now - startMs) / DAY_MS);
     const elapsed = Math.floor(elapsedDays / 7);
-    return Math.min(total, Math.max(1, elapsed));
+    return Math.min(total, Math.max(0, elapsed));
 }
 
 /**

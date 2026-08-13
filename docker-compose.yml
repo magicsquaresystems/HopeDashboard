@@ -5,8 +5,11 @@
 # Prereqs:
 #   * Sibling checkouts: ../engagement_ml and ../comment_generation
 #   * engagement_ml model bundles present at ../engagement_ml/models/
-#     (winner_T{7..42}.pkl, platt_T{7..42}.pkl, feature_*.csv, model_card_*.json —
-#     gitignored on GitHub; copy them from the HF Space repo or your training box)
+#     (winner_T{7..56}.pkl, platt_T{7..56}.pkl, feature_*.csv,
+#     model_card_*.json — forty files, ~12 MB; gitignored on GitHub.
+#     Fetch from the private model repo with a read-scoped HF token:
+#       python -c "from huggingface_hub import snapshot_download; \
+#         snapshot_download('h4cdev/hope-move-engagement-ml', local_dir='../engagement_ml/models')")
 #   * Copy .env.example to .env and fill the secrets.
 #
 # Modes:
@@ -43,7 +46,7 @@ services:
     environment:
       HOPE_API_SECRET: ${HOPE_API_SECRET:-dev-secret}
       HOPE_API_AUTH: ${HOPE_API_AUTH:-disabled}
-      HOPE_GEN_MODEL_ID: ${HOPE_GEN_MODEL_ID:-michaelajao/qwen3.5-4b-hope-forum-lora}
+      HOPE_GEN_MODEL_ID: ${HOPE_GEN_MODEL_ID:-h4cdev/qwen3.5-4b-hope-forum-lora}
       # Needed to snapshot_download private adapters from the Hub.
       HF_TOKEN: ${HF_TOKEN:-}
       HOPE_DROPOUT_URL: http://risk-api:8000/health
@@ -86,8 +89,13 @@ services:
       HOPE_RISK_API_KEY: ${HOPE_RISK_API_KEY:-dev-key-change-me}
       AUTH_SECRET: ${AUTH_SECRET:-dev-auth-secret}
       AUTH_URL: ${AUTH_URL:-http://localhost:3000}
-      FACILITATOR_EMAILS: ${FACILITATOR_EMAILS:-}
-      NEXT_PUBLIC_AUTH_PROVIDER: ${NEXT_PUBLIC_AUTH_PROVIDER:-dev-allowlist}
+      # Sign-in is platform hand-off only; this verifies the token
+      # signature. Falls back to AUTH_SECRET (matching handoff.ts) so the
+      # stack works out of the box with links from mint-handoff-token.mjs.
+      HOPE_HANDOFF_SECRET: ${HOPE_HANDOFF_SECRET:-${AUTH_SECRET:-dev-auth-secret}}
+      # "open" shows every cohort to any signed-in facilitator — right
+      # for local dev. Production runs "allowlist" (deny until assigned).
+      AUTH_MODE: ${AUTH_MODE:-open}
     depends_on:
       - comment-api
       - risk-api

@@ -30,7 +30,12 @@ const STATUS: Record<RiskLevel, FriendlyStatus> = {
 };
 
 export function friendlyStatus(level: RiskLevel): FriendlyStatus {
-    return STATUS[level];
+    // The wire type says `level` is always one of the three, but this is
+    // read straight off an API response and dereferenced unguarded by
+    // every queue row — an unexpected value would throw in render and
+    // unmount the whole queue, not one row. Degrade to the cautious
+    // middle tier instead.
+    return STATUS[level] ?? STATUS.medium;
 }
 
 export const QUEUE_PILL_LABELS: Record<RiskLevel | "all", string> = {

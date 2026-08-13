@@ -5,10 +5,10 @@ type RiskGaugeProps = {
     level: "low" | "medium" | "high";
     size?: number;
     /** Dates the number when it isn't current — set past the model's
-     *  trained horizons, where the score is anchored to week 6 and stops
-     *  responding. The gauge is the most screenshot-able thing on the
-     *  page, so the caveat has to travel with the number itself, not
-     *  only sit in a banner above it. */
+     *  trained horizons, where the score is anchored to the last trained
+     *  week and stops responding. The gauge is the most screenshot-able
+     *  thing on the page, so the caveat has to travel with the number
+     *  itself, not only sit in a banner above it. */
     asOfLabel?: string;
 };
 
@@ -24,7 +24,14 @@ export function RiskGauge({
     size = 160,
     asOfLabel,
 }: RiskGaugeProps) {
-    const clamped = Math.max(0, Math.min(1, value));
+    // NaN passes straight through Math.min/max, and a NaN dasharray makes
+    // browsers paint the full arc — a missing value rendering as 100%
+    // risk on the most screenshot-able element on the page. Clamp to the
+    // floor instead; the visibly empty arc reads as "no score", which is
+    // the truth.
+    const clamped = Number.isFinite(value)
+        ? Math.max(0, Math.min(1, value))
+        : 0;
     const radius = size / 2 - 12;
     const cx = size / 2;
     const cy = size / 2 + 8;

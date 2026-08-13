@@ -12,18 +12,17 @@ import { auth } from "@/auth";
  * the 401 JSON they already return is what `classifyGenerateError` maps
  * to "sign in again".
  *
- * `auth.ts` is deliberately Edge-safe (Credentials only, no Nodemailer)
- * so this stays a cheap JWT decode per navigation.
+ * `auth.ts` is deliberately Edge-safe (the hand-off Credentials provider
+ * only, no Node-only modules) so this stays a cheap JWT decode per
+ * navigation.
+ *
+ * The redirect carries no `callbackUrl`: `/login` is an explainer, not a
+ * sign-in form — the way back in is a fresh `/enter` link minted by the
+ * platform, which decides the destination itself.
  */
 export default auth((req) => {
     if (!req.auth) {
-        const url = new URL("/login", req.nextUrl.origin);
-        // Preserve where they were heading so login can bounce them back.
-        url.searchParams.set(
-            "callbackUrl",
-            req.nextUrl.pathname + req.nextUrl.search,
-        );
-        return Response.redirect(url);
+        return Response.redirect(new URL("/login", req.nextUrl.origin));
     }
 });
 

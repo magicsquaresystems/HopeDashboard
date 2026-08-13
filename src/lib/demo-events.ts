@@ -16,6 +16,7 @@
  */
 
 import type { ParticipantHistory } from "@/lib/api/dropout";
+import { scoreWindowEnd } from "@/lib/signals";
 
 export function seedHash(s: string): number {
     let h = 2166136261;
@@ -24,13 +25,6 @@ export function seedHash(s: string): number {
         h = Math.imul(h, 16777619);
     }
     return Math.abs(h);
-}
-
-function addDays(d: Date, days: number, hourOffset = 9): Date {
-    const out = new Date(d);
-    out.setUTCDate(out.getUTCDate() + Math.floor(days));
-    out.setUTCHours(hourOffset, 0, 0, 0);
-    return out;
 }
 
 /**
@@ -67,10 +61,11 @@ export function demoEngagementContext(history: ParticipantHistory | null) {
     ).size;
 
     const start_ms = new Date(history.effective_start).getTime();
-    const score_at_ms = addDays(
-        new Date(history.effective_start),
-        history.score_at_day,
-    ).getTime();
+    // The same clock every UI signal uses — previously `addDays` forced
+    // 09:00 UTC, putting this window 9 h past `scoreWindowEnd` and making
+    // the /generate context disagree with the panel by a day around the
+    // boundary.
+    const score_at_ms = scoreWindowEnd(history);
     const dayMs = 86_400_000;
     const firstWeekEnd = start_ms + 7 * dayMs;
     const wroteFirstWeek = sorted.some(

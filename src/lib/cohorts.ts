@@ -20,9 +20,9 @@ export type CohortMeta = {
     /** Length of the programme in days. Drives the week-selector range
      * and the `programme_length_days` field sent to engagement_ml. Not
      * every cohort runs for 42 days — 4-week pilots, 6-week IIH cohorts
-     * and 8-week modules coexist. The model only ships trained horizons
-     * at T ∈ {7,14,21,28,35,42}; any score_at_day above 42 is scored and
-     * anchored back to 42 by the service, which the week selector
+     * and 8-week modules coexist. The model ships trained horizons at
+     * T ∈ {7,14,21,28,35,42,49,56}; any score_at_day above 56 is scored
+     * and anchored back to 56 by the service, which the week selector
      * discloses (see `scoringStore.isAnchoredWeek`). */
     programmeLengthDays: number;
     /** Cohort start (ISO). Together with `programmeLengthDays` this

@@ -13,7 +13,7 @@ import {
 
 import { EmptyState } from "@/components/empty-state";
 import type { EventRecord, ParticipantHistory } from "@/lib/api/dropout";
-import { DAY_MS } from "@/lib/signals";
+import { DAY_MS, scoreWindowEnd } from "@/lib/signals";
 import { useUiStore } from "@/lib/store/uiStore";
 
 /**
@@ -64,35 +64,58 @@ const ACCENTS: Record<EventRecord["event_type"], string> = {
     facilitator_comment: "text-risk-md bg-risk-md-bg",
 };
 
+/**
+ * All day math and labels here use UTC deliberately. Programme days —
+ * the score window, `score_at_day`, the bundle's day semantics — are
+ * UTC-anchored, and the bucket keys below slice the ISO string (a UTC
+ * day). Labelling with local dates while keying on UTC days split
+ * midnight-straddling events into duplicate date headers on any
+ * non-UTC browser.
+ */
+const startOfUtcDay = (d: Date) =>
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+
 function dayLabel(date: Date, now: Date): string {
-    const startOf = (d: Date) =>
-        new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-    const diffDays = Math.round((startOf(now) - startOf(date)) / DAY_MS);
+    const diffDays = Math.round(
+        (startOfUtcDay(now) - startOfUtcDay(date)) / DAY_MS,
+    );
     if (diffDays === 0) return "Today";
     if (diffDays === 1) return "Yesterday";
     if (diffDays < 7) {
-        return date.toLocaleDateString(undefined, { weekday: "long" });
+        return date.toLocaleDateString(undefined, {
+            weekday: "long",
+            timeZone: "UTC",
+        });
     }
-    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return date.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        timeZone: "UTC",
+    });
 }
 
 function timeOnly(date: Date): string {
     return date.toLocaleTimeString(undefined, {
         hour: "numeric",
         minute: "2-digit",
+        timeZone: "UTC",
     });
 }
 
 /** Compact relative time for the narrative rows. "Today", "Yesterday",
  * "3d ago" up to a week; date otherwise. */
 function relativeTime(date: Date, now: Date): string {
-    const startOf = (d: Date) =>
-        new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-    const diffDays = Math.round((startOf(now) - startOf(date)) / DAY_MS);
+    const diffDays = Math.round(
+        (startOfUtcDay(now) - startOfUtcDay(date)) / DAY_MS,
+    );
     if (diffDays === 0) return "Today";
     if (diffDays === 1) return "Yesterday";
     if (diffDays < 14) return `${diffDays}d ago`;
-    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return date.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        timeZone: "UTC",
+    });
 }
 
 function eventLabel(e: EventRecord): string {
@@ -162,13 +185,17 @@ function narrativeLine(
     return `${label}: “${snip}”`;
 }
 
-function bucketEvents(events: EventRecord[], now: Date): DayBucket[] {
+function bucketEvents(
+    events: EventRecord[],
+    now: Date,
+): { buckets: DayBucket[]; omitted: number } {
     const sorted = [...events].sort((a, b) =>
         b.timestamp.localeCompare(a.timestamp),
     );
 
     const buckets = new Map<string, DayBucket>();
     let kept = 0;
+    let omitted = 0;
     for (const e of sorted) {
         const d = new Date(e.timestamp);
         const dayKey = d.toISOString().slice(0, 10);
@@ -186,14 +213,22 @@ function bucketEvents(events: EventRecord[], now: Date): DayBucket[] {
             bucket.pageVisits.push(e);
             continue;
         }
-        if (kept >= MAX_EXPANDED) continue;
+        if (kept >= MAX_EXPANDED) {
+            // Counted rather than silently dropped — "Full history" must
+            // not imply completeness it doesn't have.
+            omitted += 1;
+            continue;
+        }
         bucket.events.push(e);
         kept += 1;
     }
 
-    return Array.from(buckets.values()).filter(
-        (b) => b.events.length > 0 || b.pageVisits.length > 0,
-    );
+    return {
+        buckets: Array.from(buckets.values()).filter(
+            (b) => b.events.length > 0 || b.pageVisits.length > 0,
+        ),
+        omitted,
+    };
 }
 
 /**
@@ -397,7 +432,15 @@ export function ActivityTimeline({
     history: ParticipantHistory;
 }) {
     const [expanded, setExpanded] = useState(false);
-    const now = useMemo(() => new Date(), []);
+    // The selected scoring week's clock, not the wall clock — the same
+    // anchor every other number on the page measures against. A wall
+    // clock here made the timeline say "29d ago" while the detail tile,
+    // correctly, called the same participant active that week (the exact
+    // bug fixed once already in drafts.tsx for post age).
+    const now = useMemo(
+        () => new Date(scoreWindowEnd(history)),
+        [history],
+    );
     const selectedPostTs = useUiStore((s) => s.selectedPostTs);
     const selectPost = useUiStore((s) => s.selectPost);
     // The post the Drafts panel is currently generating against — newest
@@ -440,7 +483,7 @@ export function ActivityTimeline({
         }));
     }, [history.events, now]);
 
-    const buckets = useMemo(
+    const { buckets, omitted } = useMemo(
         () => bucketEvents(history.events, now),
         [history.events, now],
     );
@@ -583,6 +626,13 @@ export function ActivityTimeline({
                             </ul>
                         </li>
                     ))}
+                    {omitted > 0 && (
+                        <li className="pt-1 text-xs text-muted">
+                            Showing the {MAX_EXPANDED} most recent events —{" "}
+                            {omitted} earlier{" "}
+                            {omitted === 1 ? "event" : "events"} not shown.
+                        </li>
+                    )}
                 </ol>
             )}
             </div>

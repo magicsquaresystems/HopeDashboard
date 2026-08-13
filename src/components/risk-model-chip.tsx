@@ -26,8 +26,9 @@ export function RiskModelChip() {
     // Exact horizon when one exists, else the LARGEST trained horizon at
     // or below the requested day — which is what the service itself
     // anchors to. A plain `find(h => h.T <= scoreAt)` returns whichever
-    // entry happens to come first in the response array, so an 8-week
-    // cohort at W8 could show T7's metrics beside a T42-anchored score.
+    // entry happens to come first in the response array, so a week past
+    // the trained set could show T7's metrics beside a score anchored to
+    // the last trained horizon.
     const horizon =
         info.data.horizons.find((h) => h.T === scoreAt) ??
         [...info.data.horizons]

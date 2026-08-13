@@ -47,10 +47,14 @@ export function DriverBars({
             </p>
         );
     }
-    const w = weights ?? syntheticWeights(factors.length);
-    const max = Math.max(...w);
+    // Mirror the `directions` arity guard below: a weights array that
+    // doesn't line up with `factors` would index `undefined` and render
+    // literal "NaN%" labels, so fall back to synthetic ranking instead.
+    const hasWeights =
+        Array.isArray(weights) && weights.length === factors.length;
+    const w = hasWeights ? weights! : syntheticWeights(factors.length);
     const total = w.reduce((a, b) => a + b, 0);
-    const estimated = !weights;
+    const estimated = !hasWeights;
 
     // Per-factor direction: each driver carries whether it raised or lowered
     // this person's risk. Used only when the backend supplied one entry per
@@ -64,7 +68,11 @@ export function DriverBars({
     return (
         <div className="space-y-2.5">
             {factors.map((f, i) => {
-                const pct = max > 0 ? Math.round((w[i] / max) * 100) : 0;
+                // One denominator for both the bar and the label: each
+                // factor's share of the top-3 magnitudes. Width previously
+                // used w/max while the label used w/total, so the top bar
+                // rendered 100% wide beside a "52%" label — the caption
+                // below claims width IS the share, so make it so.
                 const share = total > 0 ? Math.round((w[i] / total) * 100) : 0;
                 const raising = hasDirections
                     ? directions![i] === "up"
@@ -92,7 +100,7 @@ export function DriverBars({
                                         "h-full rounded-full",
                                         barColor,
                                     )}
-                                    style={{ width: `${pct}%` }}
+                                    style={{ width: `${share}%` }}
                                     aria-hidden
                                 />
                             </div>
@@ -105,8 +113,8 @@ export function DriverBars({
                             title={
                                 hasDirections
                                     ? raising
-                                        ? `Raises risk — ${share}% of the explanation`
-                                        : `Lowers risk — ${share}% of the explanation`
+                                        ? `Raises risk — ${share}% of these top factors' combined weight`
+                                        : `Lowers risk — ${share}% of these top factors' combined weight`
                                     : undefined
                             }
                         >
@@ -121,6 +129,7 @@ export function DriverBars({
                             ) : (
                                 "+"
                             )}
+                            {estimated ? "~" : ""}
                             {share}%
                         </div>
                     </div>
@@ -128,12 +137,12 @@ export function DriverBars({
             })}
             <p className="pt-1 text-[10.5px] italic text-muted">
                 {hasDirections
-                    ? "↑ raises this person's risk · ↓ lowers it. Bar width = share of the explanation."
+                    ? "↑ raises this person's risk · ↓ lowers it. Bars show each factor's share of these top factors — not of the overall score."
                     : protectiveFallback
-                      ? "Share of why the model rates this person low risk."
-                      : "Share of what's driving this person's risk score."}
+                      ? "Relative weight among the top reasons the model rates this person low risk."
+                      : "Relative weight among the top drivers of this person's risk score."}
                 {estimated &&
-                    " Bar widths are estimates until the model emits per-factor magnitudes."}
+                    " Percentages are estimates until the model emits per-factor magnitudes."}
             </p>
         </div>
     );

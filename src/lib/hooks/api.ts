@@ -20,8 +20,8 @@
  * - `ONE_DAY` for risk scores and the risk model card. Scores are produced by a
  *   weekly batch, so re-fetching within a session cannot return anything new —
  *   caching hard keeps the queue from re-scoring on every navigation.
- * - `FIVE_MIN` for participant memory and the model roster, both of which a
- *   facilitator's own actions can change mid-session.
+ * - `FIVE_MIN` for participant memory, which a facilitator's own actions
+ *   can change mid-session.
  *
  * ## Cache keys must include `cohortId`
  *
@@ -65,7 +65,6 @@ import type {
     ParticipantHistory,
     PredictionResponse,
 } from "@/lib/api/dropout";
-import { useSessionStatsStore } from "@/lib/store/sessionStatsStore";
 import { BUSY_CODE } from "@/app/cohorts/[cohortId]/drafts-helpers";
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
@@ -224,13 +223,12 @@ export function useEvent() {
     return useMutation({
         mutationFn: (body: ClientEventRequest) =>
             postJSON("/api/proxy/event", body),
-        onSuccess: (_data, variables) => {
+        onSuccess: () => {
             // Invalidate memory so the freshly-sent reply appears next render.
+            // The "contacted this session" stat is recorded by the drafts
+            // panel's send handler, which knows the participant and cohort;
+            // EventRequest carries draft ids only.
             qc.invalidateQueries({ queryKey: ["memory"] });
-            // Bump the topbar's "contacted this session" stat on send paths.
-            if (variables.action === "accept" || variables.action === "edit") {
-                useSessionStatsStore.getState().incrementSent();
-            }
         },
     });
 }

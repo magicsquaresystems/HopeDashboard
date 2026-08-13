@@ -7,23 +7,24 @@ import { MODEL_MAX_WEEK } from "@/lib/store/scoringStore";
 /**
  * Says plainly that the risk score has stopped moving.
  *
- * The dropout model ships trained horizons up to week 6. Past that the
- * service still answers, but it anchors the prediction to the first 42
- * days — so weeks 7 and 8 return *the same number as week 6*, whatever
- * the participant has done since. On an 8-week programme (HOPE MOVE and
- * NHS Long COVID both are) that covers the final quarter of the course.
+ * The dropout model ships trained horizons up to `MODEL_MAX_WEEK`
+ * (currently week 8 / T56). Past that the service still answers, but it
+ * anchors the prediction to the last trained horizon — later weeks
+ * return *the same number*, whatever the participant has done since.
+ * Unreachable for cohorts of 8 weeks or less; load-bearing for any
+ * longer programme, which is expected on the live platform.
  *
  * A frozen number is more dangerous than a missing one. It looks
  * exactly like a fresh number, so a participant who was steady through
- * week 6 and then vanished still reads as steady — at the precise
- * moment a facilitator most needs to notice. Hence a notice rather than
- * a tooltip: it has to be readable without hovering, and it has to say
- * what to look at *instead*.
+ * the last trained week and then vanished still reads as steady — at
+ * the precise moment a facilitator most needs to notice. Hence a notice
+ * rather than a tooltip: it has to be readable without hovering, and it
+ * has to say what to look at *instead*.
  *
  * Recent-activity signals are the honest substitute. "Last active",
  * event counts, and the timeline are all measured against the selected
- * week's window, so unlike the model score they keep updating through
- * weeks 7 and 8.
+ * week's window, so unlike the model score they keep updating past the
+ * trained horizons.
  */
 export function AnchoredWeekNotice({
     week,

@@ -1,6 +1,6 @@
 /**
- * Adapter layer between the server-extracted cohort bundle (real Hope Move
- * platform data, gitignored under `local/`) and the dashboard's existing
+ * Adapter layer between the cohort bundle (real Hope Move platform data,
+ * committed under `local/` — see `cohort-data.ts`) and the dashboard's
  * dropout-API / profile / memory contracts.
  *
  * Keeping the adapter in one place means the queue / detail / drafts panels
@@ -11,15 +11,14 @@
 import type {
     CohortBundle,
     RealParticipant,
-    RealWellbeingResult,
 } from "@/lib/server/cohort-data";
 import type { EventRecord, ParticipantHistory } from "@/lib/api/dropout";
 import type { Profile } from "@/lib/profile";
 
 /**
- * Score-at-day mirrors engagement_ml's per-horizon training. Six bundles
- * are trained for T ∈ {7, 14, 21, 28, 35, 42}; callers pick which one.
- * Default to the final week so existing callers keep behaviour. The
+ * Score-at-day mirrors engagement_ml's per-horizon training. Eight models
+ * are trained for T ∈ {7, 14, 21, 28, 35, 42, 49, 56}; callers pick which
+ * one. Default to week 6 so existing callers keep behaviour. The
  * dashboard's week-selector overrides this per call.
  *
  * `programme_length_days` now comes from the cohort bundle, not a
@@ -72,7 +71,12 @@ export function bundleToHistory(
     const p = findRealParticipant(bundle, participantId);
     if (!p) return null;
 
-    const effectiveStart = new Date(bundle.cohort.effectiveStart);
+    // `ensureUtc` on the boundary too, not just the events: a bundle with
+    // a naive effectiveStart would otherwise shift the whole window by
+    // the host's UTC offset while the declared `effective_start` (line
+    // below, normalised) wouldn't — either 422ing at the service or
+    // silently dropping day-0 events, depending on the offset's sign.
+    const effectiveStart = new Date(ensureUtc(bundle.cohort.effectiveStart));
     const windowEndMs =
         effectiveStart.getTime() + scoreAtDay * 24 * 60 * 60 * 1000;
 
@@ -127,20 +131,6 @@ export function bundleToHistory(
     };
 }
 
-/**
- * SWEMWBS wellbeing results for a participant, oldest first.
- *
- * Empty when the bundle predates wellbeing support or the participant
- * never completed a questionnaire — roughly two thirds of a cohort, so
- * callers must treat absence as normal rather than an error.
- */
-export function bundleWellbeing(
-    bundle: CohortBundle,
-    participantId: string,
-): RealWellbeingResult[] {
-    return findRealParticipant(bundle, participantId)?.wellbeing ?? [];
-}
-
 export function bundleToProfile(
     bundle: CohortBundle,
     participantId: string,
@@ -153,24 +143,6 @@ export function bundleToProfile(
         bio: p.bio,
         startedAt: p.startedAt,
     };
-}
-
-/**
- * Real prior facilitator replies for this participant, suitable as seeds
- * for `/memory/post` so the next /generate call retrieves them as context.
- * Truncate to the most recent N because memory retrieval is rank-by-recency
- * weighted; very old replies dilute the prompt.
- */
-export function bundlePriorReplies(
-    bundle: CohortBundle,
-    participantId: string,
-    limit = 5,
-): Array<{ text: string; recordedAt: string | null; activityType: string }> {
-    const p = findRealParticipant(bundle, participantId);
-    if (!p) return [];
-    return [...p.priorFacilitatorReplies]
-        .sort((a, b) => (b.recordedAt ?? "").localeCompare(a.recordedAt ?? ""))
-        .slice(0, limit);
 }
 
 function facilitatorDensity(bundle: CohortBundle): number {

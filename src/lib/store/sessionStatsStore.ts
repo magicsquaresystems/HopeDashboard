@@ -1,21 +1,37 @@
 import { create } from "zustand";
 
 /**
- * Session-local counters surfaced in the topbar. Resets on page reload —
- * which is the right behavior for "this session" framing. The 7-day
- * facilitator-reply rollup from comment-gen's memory feed is still
- * available via useMemory if we want a longer window later.
+ * Session-local outreach stats surfaced in the topbar. Resets on page
+ * reload — the right behaviour for "this session" framing.
+ *
+ * Counts **distinct participants per cohort**, not sends: two replies to
+ * the same person are one contact, and cohort A's outreach must not leak
+ * into cohort B's topbar on client-side navigation (the old single
+ * counter did both). Recorded from the drafts panel's send handler,
+ * which is the one place that knows who the reply went to — the wire
+ * `EventRequest` carries draft ids only.
  */
 
 type SessionStatsState = {
-    sentThisSession: number;
-    incrementSent: () => void;
-    reset: () => void;
+    /** cohortId → set (as a record) of participant ids contacted. */
+    contactedByCohort: Record<number, Record<string, true>>;
+    recordContact: (cohortId: number, participantId: string) => void;
+    contactedCount: (cohortId: number) => number;
 };
 
-export const useSessionStatsStore = create<SessionStatsState>((set) => ({
-    sentThisSession: 0,
-    incrementSent: () =>
-        set((s) => ({ sentThisSession: s.sentThisSession + 1 })),
-    reset: () => set({ sentThisSession: 0 }),
+export const useSessionStatsStore = create<SessionStatsState>((set, get) => ({
+    contactedByCohort: {},
+    recordContact: (cohortId, participantId) =>
+        set((s) => {
+            const cohort = s.contactedByCohort[cohortId] ?? {};
+            if (cohort[participantId]) return s;
+            return {
+                contactedByCohort: {
+                    ...s.contactedByCohort,
+                    [cohortId]: { ...cohort, [participantId]: true },
+                },
+            };
+        }),
+    contactedCount: (cohortId) =>
+        Object.keys(get().contactedByCohort[cohortId] ?? {}).length,
 }));

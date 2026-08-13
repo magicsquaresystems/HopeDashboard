@@ -100,7 +100,7 @@ export function WeekSelector({
                                     ? `Week ${w} hasn't finished yet — no behaviour to score`
                                     : isAnchoredWeek(w)
                                       ? `Week ${w} · scored against the model's W${MODEL_MAX_WEEK} horizon`
-                                      : `Score the cohort at week ${w} (days 0–${w * 7 - 1})`
+                                      : `Score the cohort at week ${w} (days 1–${w * 7})`
                             }
                             className={
                                 "min-w-8 rounded px-2 py-1 text-xs font-medium transition-colors " +
@@ -117,16 +117,21 @@ export function WeekSelector({
                 })}
             </div>
             <span className="text-xs text-muted">
-                ({week === lastWeek ? "end of programme" : `day ${week * 7}`})
+                (
+                {week === lastWeek
+                    ? "end of programme"
+                    : `days 1–${week * 7}`}
+                )
             </span>
             {/* Weeks past the trained horizons still score — the service
-                anchors them to days 0..41 and says so. Surfacing it here
-                keeps a W8 number from reading as a W8-trained number. */}
+                anchors them to the last trained week and says so.
+                Surfacing it here keeps the number from reading as if the
+                model had been trained for the selected week. */}
             {anchored && (
                 <span
-                    title={`engagement_ml ships trained horizons up to week ${MODEL_MAX_WEEK}. Week ${week} is scored on behaviour from days 0–${
-                        MODEL_MAX_WEEK * 7 - 1
-                    } and interpreted against the 6-week reference programme.`}
+                    title={`The risk model's trained horizons stop at week ${MODEL_MAX_WEEK}. Week ${week} is scored on the first ${
+                        MODEL_MAX_WEEK * 7
+                    } days of behaviour; anything after that does not change the score.`}
                     className="inline-flex items-center gap-1.5 rounded-md border border-risk-md bg-risk-md-bg px-2 py-1 text-xs text-risk-md"
                 >
                     anchored to W{MODEL_MAX_WEEK}
@@ -138,7 +143,9 @@ export function WeekSelector({
                     className="inline-flex items-center gap-1.5 text-xs text-muted"
                 >
                     <Lock className="h-3 w-3" aria-hidden />
-                    W{maxWithData + 1}–W{weeks.length} not yet run
+                    {maxWithData === 0
+                        ? "first week in progress — scoring opens at day 7"
+                        : `W${maxWithData + 1}–W${weeks.length} not yet run`}
                 </span>
             )}
             <RiskModelChip />
