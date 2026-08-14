@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DraftCard, type DraftContext } from "@/components/draft-card";
 import { DiscussionThread } from "@/components/discussion-thread";
+import { CommentGenChip } from "@/components/comment-gen-chip";
 // Follow-up activity panel temporarily disabled — it surfaced participant
 // @-handles in the facilitator's past replies. Re-enable once those are
 // scrubbed/de-identified.
@@ -299,7 +300,12 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
                             · {firstName}
                         </span>
                     </CardTitle>
-                    {response?.model_version && (
+                    {/* Once drafts exist, attribute them to the model that
+                        actually wrote them. Before that, name the model
+                        that will — and say whether it is loaded, so a
+                        60–90 s wait (or a service with no GPU) is
+                        legible instead of an unexplained spinner. */}
+                    {response?.model_version ? (
                         <span
                             className="inline-flex items-center gap-1.5 text-xs text-accent-ink"
                             title={response.model_version}
@@ -307,6 +313,8 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
                             <Sparkles className="h-3.5 w-3.5" aria-hidden />
                             Drafted by {formatModelLabel(response.model_version)}
                         </span>
+                    ) : (
+                        <CommentGenChip />
                     )}
                 </div>
             </CardHeader>

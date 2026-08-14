@@ -178,9 +178,20 @@ export function useMemory(participantId: string | null, cohortId: number | null)
  * an activity post.
  */
 export function useGenerate() {
+    const qc = useQueryClient();
     return useMutation({
         mutationFn: (body: GenerateRequest) =>
             postJSON<GenerateResponse>("/api/proxy/generate", body),
+        // A failed generation is the moment the cached service status is
+        // least trustworthy. `useCommentGenStatus` holds its answer for five
+        // minutes, so without this the header can name a live, loaded model
+        // while the panel below it renders "comment generation is offline" —
+        // the two read different endpoints and the stale one wins on screen.
+        // Refetching costs one cheap `/version` + `/health` round trip and
+        // makes the two agree.
+        onError: () => {
+            qc.invalidateQueries({ queryKey: ["comment-gen-status"] });
+        },
         // The service serves one model in one process, so when several
         // facilitators generate at once it refuses the overflow with a
         // 503 rather than queueing them invisibly. Retrying is the right
@@ -245,6 +256,33 @@ export function useRiskModelInfo() {
         },
         staleTime: ONE_DAY,
         refetchOnWindowFocus: false,
+    });
+}
+
+export type CommentGenStatus = {
+    model_version: string;
+    service_version: string;
+    /** Null when the service omits the field (older build). */
+    model_loaded: boolean | null;
+    status: "healthy" | "degraded";
+};
+
+/**
+ * Which reply model is configured and whether it is resident.
+ *
+ * `FIVE_MIN` rather than `ONE_DAY`: `model_loaded` flips from false to
+ * true once the adapter finishes loading, and a facilitator waiting on
+ * that should not have to reload the page to see it.
+ */
+export function useCommentGenStatus() {
+    return useQuery({
+        queryKey: ["comment-gen-status"],
+        queryFn: () => getJSON<CommentGenStatus>("/api/proxy/comment-gen/status"),
+        staleTime: FIVE_MIN,
+        refetchOnWindowFocus: false,
+        // A dead comment service is an expected state here (no GPU
+        // assigned yet), not something to hammer.
+        retry: 1,
     });
 }
 
