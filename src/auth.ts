@@ -1,16 +1,27 @@
 /**
  * NextAuth v5 config.
  *
- * Edge-runtime safe: only Credentials provider is statically imported here,
- * so middleware (which runs in Edge) does not pull in Node-only modules.
+ * Edge-runtime safe: only Credentials providers are statically imported
+ * here, so middleware (which runs in Edge) does not pull in Node-only
+ * modules.
  *
- * Sign-in is platform hand-off only. The Hope Move platform links a
- * facilitator here with a short-lived signed token carrying their
- * identity; there is no email form and no direct-credentials provider.
- * The old `dev-allowlist` provider (any email in open mode) was a testing
- * affordance and was removed — on a deployment fronting real participant
- * data it amounted to unauthenticated access. For local development, mint
- * a hand-off link with `scripts/mint-handoff-token.mjs`.
+ * There are two ways in, and both start on the Hope Move platform —
+ * there is no email form and no direct-credentials provider. The old
+ * `dev-allowlist` provider (any email in open mode) was a testing
+ * affordance and was removed: on a deployment fronting real participant
+ * data it amounted to unauthenticated access.
+ *
+ *   `hope-platform`   The production path. Hope redirects to
+ *                     `/auth/callback?code=…`; we trade that code for an
+ *                     access + refresh pair and read the facilitator's
+ *                     identity out of the access token. This is the only
+ *                     route that yields credentials for Hope's own API.
+ *
+ *   `platform-handoff` The original path, kept. Hope mints a short-lived
+ *                     signed token carrying an email. It grants a session
+ *                     but no platform API access, and it is how local
+ *                     development signs in at all — see
+ *                     `scripts/mint-handoff-token.mjs`.
  *
  * `AUTH_MODE` still matters for cohort *visibility*, not sign-in: with no
  * explicit assignment, `open` shows every cohort (convenient locally),
@@ -22,20 +33,108 @@ import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 
 import { handoffSecret, verifyHandoffToken } from "@/lib/auth/handoff";
+import {
+    exchangeCode,
+    hopeConfig,
+    refreshTokens,
+} from "@/lib/auth/hope-exchange";
+import {
+    decodeJwtClaims,
+    facilitatorFromClaims,
+    hasSyntheticEmail,
+    type HopeTokens,
+    needsRefresh,
+} from "@/lib/auth/hope-token";
 
 export type AuthMode = "open" | "allowlist";
+
+/** Bounded by the platform's refresh-token lifetime. A session that
+ *  outlives the credential it carries is a session that looks live and
+ *  fails on every call. */
+const SESSION_MAX_AGE_S = 30 * 24 * 60 * 60;
+
+/** Providers allowed to create a session. A provider added later must
+ *  be listed here explicitly rather than inheriting access. */
+const ALLOWED_PROVIDERS = new Set(["platform-handoff", "hope-platform"]);
 
 export function authMode(): AuthMode {
     return process.env.AUTH_MODE === "allowlist" ? "allowlist" : "open";
 }
 
+declare module "next-auth" {
+    interface Session {
+        /** The platform's own identifier for this facilitator. */
+        hopeUserId?: string;
+        /** True when this session carries Hope API credentials. */
+        hopeLinked?: boolean;
+        /** Set when the platform link has broken and re-auth is needed. */
+        error?: string;
+    }
+}
+
+declare module "next-auth/jwt" {
+    interface JWT {
+        hopeUserId?: string;
+        /** Server-side only — deliberately never surfaced through the
+         *  `session` callback. See lib/auth/hope-session.ts. */
+        hope?: HopeTokens;
+        error?: string;
+    }
+}
+
 const providers: NextAuthConfig["providers"] = [
-    /**
-     * The production path. The Hope Move platform links a facilitator
-     * here with a short-lived signed token carrying their identity, so
-     * they never see a sign-in form — they are already signed in over
-     * there. See lib/auth/handoff.ts for the token format.
-     */
+    Credentials({
+        id: "hope-platform",
+        name: "Hope Move",
+        credentials: { code: { label: "Authorization code", type: "text" } },
+        async authorize(input) {
+            const code = String(input?.code ?? "");
+            const config = hopeConfig();
+            if (!code || !config) return null;
+
+            const tokens = await exchangeCode(config, code);
+            if (!tokens) return null;
+
+            const claims = decodeJwtClaims(tokens.accessToken);
+            if (!claims) {
+                console.error(
+                    "hope auth: access token is not a readable JWT — cannot " +
+                        "identify the facilitator",
+                );
+                return null;
+            }
+
+            const who = facilitatorFromClaims(claims);
+            if (!who) {
+                // Refused rather than guessed: without an id claim every
+                // facilitator's work would be attributed to the same
+                // empty string. The claim names tried are listed in
+                // lib/auth/hope-token.ts.
+                console.error(
+                    "hope auth: no usable id claim in the access token — " +
+                        `saw [${Object.keys(claims).join(", ")}]`,
+                );
+                return null;
+            }
+
+            if (hasSyntheticEmail(who.email)) {
+                console.warn(
+                    "hope auth: no email claim in the access token; using a " +
+                        "synthetic address. Cohort assignment by email will " +
+                        "not match, so `allowlist` mode will grant nothing.",
+                );
+            }
+
+            return {
+                id: who.hopeUserId,
+                email: who.email,
+                name: who.name ?? who.email.split("@")[0],
+                hopeUserId: who.hopeUserId,
+                hope: tokens,
+            };
+        },
+    }),
+
     Credentials({
         id: "platform-handoff",
         name: "Hope Move platform",
@@ -57,23 +156,83 @@ const providers: NextAuthConfig["providers"] = [
 
 export const config: NextAuthConfig = {
     trustHost: true,
-    session: { strategy: "jwt" },
+    session: { strategy: "jwt", maxAge: SESSION_MAX_AGE_S },
     pages: { signIn: "/login" },
     providers,
     callbacks: {
         async signIn({ user, account }) {
             const email = user?.email?.toLowerCase();
             if (!email) return false;
-            // A verified hand-off already proves the platform vouches
-            // for this person; re-checking them against our own
-            // allowlist would mean maintaining the roster twice and
-            // locking out a legitimate facilitator the platform just
-            // onboarded. The signature is the authority here.
-            //
-            // Hand-off is the only provider, so anything else is denied
-            // outright — a second provider added later must opt in here
-            // explicitly rather than inherit access.
-            return account?.provider === "platform-handoff";
+            // A verified hand-off or a completed code exchange already
+            // proves the platform vouches for this person; re-checking
+            // them against our own allowlist would mean maintaining the
+            // roster twice and locking out a legitimate facilitator the
+            // platform just onboarded. The platform is the authority.
+            return ALLOWED_PROVIDERS.has(account?.provider ?? "");
+        },
+
+        /**
+         * Also the refresh point.
+         *
+         * This runs on every `auth()` call, including from middleware, so
+         * it must stay cheap in the common case — and it does: a network
+         * call happens only inside the skew window, so at most once per
+         * access-token lifetime per facilitator, not once per request.
+         */
+        async jwt({ token, user }) {
+            if (user) {
+                const linked = user as {
+                    hopeUserId?: string;
+                    hope?: HopeTokens;
+                };
+                if (linked.hopeUserId && linked.hope) {
+                    token.hopeUserId = linked.hopeUserId;
+                    token.hope = linked.hope;
+                    delete token.error;
+                }
+            }
+
+            const hope = token.hope;
+            if (!hope) return token; // hand-off session: nothing to refresh
+            if (!needsRefresh(hope.expiresAt, Date.now())) return token;
+
+            const cfg = hopeConfig();
+            if (!cfg) {
+                token.error = "hope_not_configured";
+                return token;
+            }
+
+            const next = await refreshTokens(cfg, hope.refreshToken);
+            if (!next) {
+                // Drop the dead pair rather than keeping it. Holding an
+                // expired token turns every downstream call into an
+                // opaque 401; clearing it lets the session end cleanly
+                // and send the facilitator back to the platform.
+                delete token.hope;
+                token.error = "hope_refresh_failed";
+                return token;
+            }
+
+            // The platform rotates the refresh token, so store what came
+            // back and discard what we sent.
+            token.hope = next;
+            delete token.error;
+            return token;
+        },
+
+        /**
+         * What the browser is allowed to see.
+         *
+         * The object returned here is served by `/api/auth/session` and
+         * read by `useSession()`, so it is public. Access and refresh
+         * tokens must never be added to it — server code reads them from
+         * the underlying JWT via lib/auth/hope-session.ts.
+         */
+        async session({ session, token }) {
+            session.hopeUserId = token.hopeUserId;
+            session.hopeLinked = Boolean(token.hope);
+            session.error = token.error;
+            return session;
         },
     },
 };

@@ -24,14 +24,29 @@ export default auth((req) => {
     if (!req.auth) {
         return Response.redirect(new URL("/login", req.nextUrl.origin));
     }
+
+    // A session whose platform link has broken is worse than no session:
+    // it renders a working-looking dashboard where the cohort list has
+    // quietly emptied, because the credentials behind it are gone. The
+    // `jwt` callback sets this when a refresh fails, and the only fix is
+    // to go back to Hope Move for a new code — so say that rather than
+    // letting them wonder where their cohorts went.
+    if (req.auth.error === "hope_refresh_failed") {
+        return Response.redirect(
+            new URL("/login?error=session_expired", req.nextUrl.origin),
+        );
+    }
 });
 
 export const config = {
     // Everything except: API routes (self-gating, see above), Next's own
-    // assets, `/enter` (the platform hand-off — requiring a session to
-    // reach the route that creates one is a loop), the login fallback,
-    // and static files.
+    // assets, the two sign-in doors, the login fallback, and static files.
+    //
+    // `/enter` and `/auth/callback` are both exempt for the same reason —
+    // requiring a session to reach the route that creates one is a loop.
+    // Miss either and the symptom is a redirect to `/login` that looks
+    // like the platform sent a bad link.
     matcher: [
-        "/((?!api|enter|_next/static|_next/image|favicon.ico|login|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+        "/((?!api|enter|auth/callback|_next/static|_next/image|favicon.ico|login|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
     ],
 };

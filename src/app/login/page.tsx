@@ -23,6 +23,15 @@ const HANDOFF_ERRORS: Record<string, string> = {
         "That link has expired or isn't valid any more. Links from Hope Move are single-use and short-lived — open the assistant again from your dashboard.",
     not_configured:
         "Sign-in from Hope Move isn't configured on this deployment yet. Contact the programme admin.",
+    // The code-exchange door (`/auth/callback`). Worded the same way as
+    // the hand-off errors on purpose: the facilitator does not know or
+    // care which of the two routes brought them here, and the fix is the
+    // same either way — go back and open the assistant again.
+    no_code: "That link didn't carry a sign-in code.",
+    exchange_failed:
+        "We couldn't confirm that sign-in with Hope Move. The link may have already been used or expired — open the assistant again from your dashboard.",
+    session_expired:
+        "Your session with Hope Move has expired. Open the assistant again from your dashboard to continue.",
 };
 
 export default function LoginPage() {
