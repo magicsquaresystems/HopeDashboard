@@ -56,6 +56,10 @@ services:
       HOPE_DROPOUT_PANEL_PATH: /data/dropout_artifacts/cumulative_features_panel.parquet
       # Set to 1 for the CPU stub demo (no model load, canned drafts).
       HOPE_DISABLE_GENERATION: ${HOPE_DISABLE_GENERATION:-}
+      # Point at a vLLM server to serve decodes from it instead of loading
+      # weights in this container. Empty = in-process transformers (default).
+      # Set to http://vllm:8000 to use the profiled `vllm` service below.
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-}
     volumes:
       - ../comment_generation/models:/app/models:ro
       - ../comment_generation/outputs:/app/outputs
@@ -76,6 +80,52 @@ services:
     #     reservations:
     #       devices:
     #         - capabilities: [gpu]
+
+  # Optional high-concurrency backend. Off unless explicitly requested:
+  #
+  #   docker compose --profile vllm up --build
+  #
+  # then set VLLM_BASE_URL=http://vllm:8000 so comment-api routes decodes here.
+  #
+  # Why bother: the in-process backend serves one decode at a time behind a
+  # lock, so beyond `1 + HOPE_GEN_MAX_QUEUE` callers are refused with a 503.
+  # Measured, 20 simultaneous drafts came back as 4 served and 16 refused.
+  # Through vLLM the same 20 were all served in under 10 s.
+  #
+  # Needs a **merged** checkpoint. vLLM cannot load the DoRA adapter the
+  # transformers path uses — build one with
+  # `comment_generation/scripts/merge_adapter.py`, which also fixes the
+  # Qwen3.5 key layout vLLM rejects, and set VLLM_MODEL to its path or Hub id.
+  #
+  # Requires the NVIDIA Container Toolkit and roughly 16 GB of VRAM for the 4B
+  # in fp16 plus KV cache.
+  vllm:
+    profiles: ["vllm"]
+    image: vllm/vllm-openai:latest
+    container_name: hope-vllm
+    ports: ["8000:8000"]
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    command: >
+      --model ${VLLM_MODEL:-h4cdev/qwen3.5-4b-hope-forum-merged}
+      --served-model-name ${HOPE_GEN_MODEL_ID:-h4cdev/qwen3.5-4b-hope-forum-lora}
+      --max-model-len 4096
+      --gpu-memory-utilization 0.85
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/models', timeout=3)"]
+      # start_period is generous: the first request also pays CUDA-graph
+      # warmup, measured at ~37 s against ~2 s once warm.
+      start_period: 180s
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
   dashboard:
     build:
