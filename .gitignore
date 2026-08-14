@@ -64,7 +64,10 @@ hope-move dashboard.zip
 
 # Project documentation is kept out of this repo: it is public, and the docs
 # carry hosting costs, infrastructure detail and Space/model identifiers that
-# should not be. They are maintained and shared with the team directly.
+# should not be. INTEGRATION.md 1c also lists open security items against a
+# live platform — an unprotected callback and a token that cannot be revoked —
+# which is the last thing to publish while they are still open.
+# They are maintained and shared with the team directly.
 # Already-published copies remain in this repo's git history.
 docs/
 
