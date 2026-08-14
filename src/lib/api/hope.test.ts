@@ -27,9 +27,9 @@ describe("toCohortMeta", () => {
     });
 
     it("adds the missing timezone to startDate", () => {
-        // The documented example carries none, and engagement_ml 422s on a
-        // naive timestamp. This is the assumption to revisit first if risk
-        // scores ever look shifted by a fixed number of hours.
+        // Platform timestamps arrive naive and engagement_ml 422s on them,
+        // so every one of them gets `Z` appended. This field is no
+        // different — the same rule the extraction script has always used.
         expect(toCohortMeta(DOCUMENTED_ROW)?.effectiveStart).toBe(
             "2026-01-01T00:00:00Z",
         );

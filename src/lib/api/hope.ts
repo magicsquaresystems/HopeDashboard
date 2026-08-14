@@ -71,10 +71,11 @@ export function programmeLengthFrom(
  * platform sends one name and no slug, so there is nothing to preserve
  * alongside it. Split the two the day the platform sends both.
  *
- * `startDate` is normalised to UTC. The platform's documented example
- * carries no timezone at all, and engagement_ml rejects naive timestamps
- * — so this assumes UTC, which is the assumption to revisit first if
- * risk scores ever look shifted by a fixed number of hours.
+ * `startDate` is normalised to UTC with `ensureUtc`, the same treatment
+ * every other platform timestamp gets. The platform sends naive datetime
+ * strings and engagement_ml rejects them, so appending `Z` is the
+ * established convention here — see `realCohort.ts` and the extraction
+ * script, which both do it. Nothing about this field is special.
  */
 export function toCohortMeta(raw: unknown): CohortMeta | null {
     if (!raw || typeof raw !== "object") return null;
