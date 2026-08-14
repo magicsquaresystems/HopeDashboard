@@ -117,6 +117,11 @@ function firstString(
 /**
  * Who the platform says this is.
  *
+ * `preferredId` is the `userId` the platform returns alongside the tokens.
+ * It wins over the token's claims when present: it is an explicit field
+ * the platform chose to send us, where the claim names are still inferred.
+ * The two should agree, and this keeps working if they ever do not.
+ *
  * The user id is required — it is what we cache and key work against, so
  * without it we genuinely cannot proceed. Email is *not* required: it is
  * secondary here, and refusing to sign in over a missing secondary field
@@ -129,8 +134,9 @@ function firstString(
  */
 export function facilitatorFromClaims(
     claims: Record<string, unknown>,
+    preferredId?: string | null,
 ): HopeFacilitator | null {
-    const hopeUserId = firstString(claims, ID_CLAIMS);
+    const hopeUserId = preferredId?.trim() || firstString(claims, ID_CLAIMS);
     if (!hopeUserId) return null;
 
     const email = firstString(claims, EMAIL_CLAIMS);
@@ -165,17 +171,32 @@ export function needsRefresh(
     return nowMs >= expiresAt - skewMs;
 }
 
+export type HopeTokenResponse = {
+    tokens: HopeTokens;
+    /**
+     * The platform's `userId`, sent alongside the tokens on both
+     * endpoints. Optional because a deployment predating that addition
+     * omits it, in which case identity falls back to the token's claims.
+     */
+    userId?: string;
+};
+
 /**
  * Validate an `/api/auth/exchange` or `/api/auth/refresh` body.
  *
  * Both endpoints return the same shape, and both rotate the refresh
  * token, so a caller must always store what comes back rather than
  * keeping the token it sent.
+ *
+ * `userId` is accepted in either casing. The platform is ASP.NET and
+ * declares the property as `UserId`; whether it reaches the wire as
+ * `userId` depends on the serializer's naming policy, and guessing wrong
+ * would silently drop the identity we just asked them to send.
  */
 export function parseTokenResponse(
     body: unknown,
     nowMs: number,
-): HopeTokens | null {
+): HopeTokenResponse | null {
     if (!body || typeof body !== "object") return null;
     const raw = body as Record<string, unknown>;
     const accessToken = raw.accessToken;
@@ -183,8 +204,11 @@ export function parseTokenResponse(
     if (typeof accessToken !== "string" || !accessToken.trim()) return null;
     if (typeof refreshToken !== "string" || !refreshToken.trim()) return null;
     return {
-        accessToken,
-        refreshToken,
-        expiresAt: expiresAtFrom(raw.expiresIn, nowMs),
+        tokens: {
+            accessToken,
+            refreshToken,
+            expiresAt: expiresAtFrom(raw.expiresIn, nowMs),
+        },
+        userId: firstString(raw, ["userId", "UserId"]) ?? undefined,
     };
 }

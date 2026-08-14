@@ -15,7 +15,7 @@
  */
 
 import {
-    type HopeTokens,
+    type HopeTokenResponse,
     parseTokenResponse,
 } from "@/lib/auth/hope-token";
 
@@ -94,7 +94,7 @@ export async function exchangeCode(
     config: HopeConfig,
     code: string,
     nowMs: number = Date.now(),
-): Promise<HopeTokens | null> {
+): Promise<HopeTokenResponse | null> {
     const body = await postJson(config, "/api/auth/exchange", { code });
     return body === null ? null : parseTokenResponse(body, nowMs);
 }
@@ -109,7 +109,7 @@ export async function refreshTokens(
     config: HopeConfig,
     refreshToken: string,
     nowMs: number = Date.now(),
-): Promise<HopeTokens | null> {
+): Promise<HopeTokenResponse | null> {
     const body = await postJson(config, "/api/auth/refresh", { refreshToken });
     return body === null ? null : parseTokenResponse(body, nowMs);
 }

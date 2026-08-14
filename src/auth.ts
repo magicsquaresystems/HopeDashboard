@@ -92,27 +92,24 @@ const providers: NextAuthConfig["providers"] = [
             const config = hopeConfig();
             if (!code || !config) return null;
 
-            const tokens = await exchangeCode(config, code);
-            if (!tokens) return null;
+            const exchanged = await exchangeCode(config, code);
+            if (!exchanged) return null;
+            const { tokens, userId } = exchanged;
 
-            const claims = decodeJwtClaims(tokens.accessToken);
-            if (!claims) {
-                console.error(
-                    "hope auth: access token is not a readable JWT — cannot " +
-                        "identify the facilitator",
-                );
-                return null;
-            }
+            // The platform sends `userId` beside the tokens, so a token
+            // whose claims we cannot read is no longer fatal — hence
+            // `?? {}` rather than refusing here.
+            const claims = decodeJwtClaims(tokens.accessToken) ?? {};
 
-            const who = facilitatorFromClaims(claims);
+            const who = facilitatorFromClaims(claims, userId);
             if (!who) {
-                // Refused rather than guessed: without an id claim every
-                // facilitator's work would be attributed to the same
-                // empty string. The claim names tried are listed in
-                // lib/auth/hope-token.ts.
+                // Refused rather than guessed: with neither an explicit
+                // userId nor a usable id claim, every facilitator's work
+                // would be attributed to the same empty string.
                 console.error(
-                    "hope auth: no usable id claim in the access token — " +
-                        `saw [${Object.keys(claims).join(", ")}]`,
+                    "hope auth: no userId in the exchange response and no " +
+                        "usable id claim in the access token — saw " +
+                        `[${Object.keys(claims).join(", ")}]`,
                 );
                 return null;
             }
@@ -215,7 +212,7 @@ export const config: NextAuthConfig = {
 
             // The platform rotates the refresh token, so store what came
             // back and discard what we sent.
-            token.hope = next;
+            token.hope = next.tokens;
             delete token.error;
             return token;
         },

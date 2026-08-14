@@ -72,6 +72,31 @@ describe("facilitatorFromClaims", () => {
         expect(facilitatorFromClaims({})).toBeNull();
     });
 
+    it("prefers the platform's explicit userId over the token's claims", () => {
+        // `userId` is a field the platform chose to send; the claim names
+        // are still inferred. They should agree, and this keeps working if
+        // they ever do not.
+        const who = facilitatorFromClaims({ sub: "from-claim" }, "from-response");
+        expect(who?.hopeUserId).toBe("from-response");
+    });
+
+    it("falls back to the claims when no userId was sent", () => {
+        expect(
+            facilitatorFromClaims({ sub: "from-claim" }, undefined)?.hopeUserId,
+        ).toBe("from-claim");
+        expect(facilitatorFromClaims({ sub: "from-claim" }, "  ")?.hopeUserId).toBe(
+            "from-claim",
+        );
+    });
+
+    it("identifies a facilitator from userId alone, with unreadable claims", () => {
+        // An opaque access token is no longer fatal now the platform sends
+        // the id separately.
+        const who = facilitatorFromClaims({}, "hope-user-77");
+        expect(who?.hopeUserId).toBe("hope-user-77");
+        expect(hasSyntheticEmail(who!.email)).toBe(true);
+    });
+
     it("lowercases the email", () => {
         const who = facilitatorFromClaims({ sub: "u-1", email: "Fac@HopeMove.org" });
         expect(who?.email).toBe("fac@hopemove.org");
@@ -140,14 +165,52 @@ describe("parseTokenResponse", () => {
     it("reads the documented exchange shape", () => {
         expect(
             parseTokenResponse(
-                { accessToken: "at", refreshToken: "rt", expiresIn: 900 },
+                {
+                    userId: "hope-user-77",
+                    accessToken: "at",
+                    refreshToken: "rt",
+                    expiresIn: 900,
+                },
                 now,
             ),
         ).toEqual({
-            accessToken: "at",
-            refreshToken: "rt",
-            expiresAt: now + 900_000,
+            tokens: {
+                accessToken: "at",
+                refreshToken: "rt",
+                expiresAt: now + 900_000,
+            },
+            userId: "hope-user-77",
         });
+    });
+
+    it("accepts userId in either casing", () => {
+        // The platform declares the property as `UserId`; whether it
+        // reaches the wire camelCased depends on the serializer, and
+        // guessing wrong would silently drop the identity.
+        expect(
+            parseTokenResponse(
+                { UserId: "hope-user-77", accessToken: "at", refreshToken: "rt" },
+                now,
+            )?.userId,
+        ).toBe("hope-user-77");
+    });
+
+    it("accepts a numeric userId", () => {
+        expect(
+            parseTokenResponse(
+                { userId: 4210, accessToken: "at", refreshToken: "rt" },
+                now,
+            )?.userId,
+        ).toBe("4210");
+    });
+
+    it("leaves userId undefined when the platform omits it", () => {
+        // A deployment predating the addition still has to work; identity
+        // then comes from the token's claims.
+        expect(
+            parseTokenResponse({ accessToken: "at", refreshToken: "rt" }, now)
+                ?.userId,
+        ).toBeUndefined();
     });
 
     it("rejects a response missing either token", () => {
@@ -172,7 +235,7 @@ describe("parseTokenResponse", () => {
             { accessToken: "at", refreshToken: "rt" },
             now,
         );
-        expect(parsed?.accessToken).toBe("at");
-        expect(parsed?.expiresAt).toBeGreaterThan(now);
+        expect(parsed?.tokens.accessToken).toBe("at");
+        expect(parsed?.tokens.expiresAt).toBeGreaterThan(now);
     });
 });
