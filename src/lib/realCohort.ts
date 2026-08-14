@@ -34,7 +34,7 @@ const DEFAULT_SCORE_AT_DAY = 42;
  * This is defense in depth — the extraction script does the same — so the
  * adapter is robust if anyone hands us a bundle that wasn't normalised.
  */
-function ensureUtc(ts: string): string {
+export function ensureUtc(ts: string): string {
     if (!ts) return ts;
     if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts)) return ts;
     return ts + "Z";

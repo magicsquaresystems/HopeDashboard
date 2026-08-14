@@ -1,8 +1,11 @@
 import { notFound } from "next/navigation";
 
 import { auth } from "@/auth";
-import { cohortsForFacilitator, isAssigned } from "@/lib/server/assignments";
-import { findCohort } from "@/lib/cohorts";
+import {
+    cohortsForFacilitator,
+    isAssigned,
+    resolveCohort,
+} from "@/lib/server/assignments";
 import { CohortSessionReset } from "@/components/cohort-session-reset";
 import { Topbar } from "@/components/topbar";
 import { WeekSelector } from "@/components/week-selector";
@@ -17,7 +20,7 @@ export default async function CohortDashboard({
     params: Promise<{ cohortId: string }>;
 }) {
     const { cohortId } = await params;
-    const cohort = findCohort(Number(cohortId));
+    const cohort = await resolveCohort(Number(cohortId));
     if (!cohort) notFound();
 
     // 404 rather than 403 for an unassigned cohort: a facilitator who

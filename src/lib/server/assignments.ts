@@ -15,8 +15,12 @@
  * hands over the records.
  *
  * Source of truth, in precedence order:
- *   1. `facilitator_cohorts` in Postgres, when `DATABASE_URL` is set.
- *   2. `FACILITATOR_COHORTS` env JSON — `{"a@x.org":[1680],"b@x.org":[1600,1651]}`.
+ *   1. The Hope Move platform, when the integration is configured and
+ *      the session carries platform credentials. It owns both the cohort
+ *      registry and who may open what, which is what this module's
+ *      earlier "FUTURE" note anticipated.
+ *   2. `facilitator_cohorts` in Postgres, when `DATABASE_URL` is set.
+ *   3. `FACILITATOR_COHORTS` env JSON — `{"a@x.org":[1680],"b@x.org":[1600,1651]}`.
  *
  * When neither names the email, the answer depends on the auth posture:
  * in `open` mode (testing) everyone sees everything, which keeps local
@@ -24,17 +28,13 @@
  * `allowlist` mode (production) an unlisted facilitator sees nothing.
  * Deny-by-default is only correct where identities are controlled, and
  * `open` mode is explicitly the mode where they aren't.
- *
- * FUTURE: the Hope Move platform API (weekly module/course pull, being
- * built by the platform engineer) will own both the cohort registry in
- * `src/lib/cohorts.ts` and these assignments. When it lands, this
- * function hydrates from it and every call site stays as-is.
  */
 
 import { authMode } from "@/auth";
 import { ApiError } from "@/lib/api/client";
-import { COHORTS, type CohortMeta } from "@/lib/cohorts";
+import { COHORTS, findCohort, type CohortMeta } from "@/lib/cohorts";
 import { ensureSchema, getPool, hasDatabase } from "@/lib/server/db";
+import { hopeCohorts } from "@/lib/server/hope-cohorts";
 
 if (typeof window !== "undefined") {
     throw new Error("assignments.ts must not be imported in client code");
@@ -91,6 +91,19 @@ export async function cohortsForFacilitator(
     const explicit = hasDatabase()
         ? ((await fromDatabase(key)) ?? fromEnv(key))
         : fromEnv(key);
+
+    const platform = await hopeCohorts();
+    if (platform) {
+        const ids = platform.map((c) => c.id);
+        // Intersect rather than replace while it is still unconfirmed
+        // whether the platform scopes its response to the bearer token.
+        // If it turns out to return every cohort, narrowing by a local
+        // assignment keeps that from widening anyone's access; if it does
+        // scope, the intersection is a no-op. Drop this once the platform
+        // engineer confirms the endpoint is scoped.
+        return explicit ? ids.filter((id) => explicit.includes(id)) : ids;
+    }
+
     if (explicit) return explicit;
     return authMode() === "allowlist" ? [] : "all";
 }
@@ -99,11 +112,33 @@ export function isAssigned(assignment: Assignment, cohortId: number): boolean {
     return assignment === "all" || assignment.includes(cohortId);
 }
 
+/** Every cohort known to this deployment, platform-first. */
+async function cohortRegistry(): Promise<CohortMeta[]> {
+    return (await hopeCohorts()) ?? COHORTS;
+}
+
 /** Cohort registry entries this facilitator may open, registry order. */
 export async function visibleCohorts(email: string): Promise<CohortMeta[]> {
+    const registry = await cohortRegistry();
     const assignment = await cohortsForFacilitator(email);
-    if (assignment === "all") return COHORTS;
-    return COHORTS.filter((c) => assignment.includes(c.id));
+    if (assignment === "all") return registry;
+    return registry.filter((c) => assignment.includes(c.id));
+}
+
+/**
+ * One cohort by id, from whichever registry is authoritative.
+ *
+ * Pages must use this rather than `findCohort` directly: with the
+ * platform connected, the hardcoded registry is not the truth, and
+ * looking a cohort up there would either invent one the facilitator has
+ * no claim to or hide one they do.
+ */
+export async function resolveCohort(
+    cohortId: number,
+): Promise<CohortMeta | undefined> {
+    const platform = await hopeCohorts();
+    if (platform) return platform.find((c) => c.id === cohortId);
+    return findCohort(cohortId);
 }
 
 /**
