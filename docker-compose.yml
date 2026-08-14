@@ -109,7 +109,7 @@ services:
     volumes:
       - hf-cache:/root/.cache/huggingface
     command: >
-      --model ${VLLM_MODEL:-h4cdev/qwen3.5-4b-hope-forum-merged}
+      --model ${VLLM_MODEL:-h4cdev/qwen3.5-4b-hope-forum}
       --served-model-name ${HOPE_GEN_MODEL_ID:-h4cdev/qwen3.5-4b-hope-forum-lora}
       --max-model-len 4096
       --gpu-memory-utilization 0.85
