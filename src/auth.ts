@@ -40,10 +40,10 @@ import {
 } from "@/lib/auth/hope-exchange";
 import {
     decodeJwtClaims,
-    facilitatorFromClaims,
-    hasSyntheticEmail,
+        hasSyntheticEmail,
     type HopeTokens,
     needsRefresh,
+    resolveFacilitator,
 } from "@/lib/auth/hope-token";
 
 export type AuthMode = "open" | "allowlist";
@@ -94,14 +94,14 @@ const providers: NextAuthConfig["providers"] = [
 
             const exchanged = await exchangeCode(config, code);
             if (!exchanged) return null;
-            const { tokens, userId } = exchanged;
+            const { tokens, user } = exchanged;
 
-            // The platform sends `userId` beside the tokens, so a token
-            // whose claims we cannot read is no longer fatal — hence
-            // `?? {}` rather than refusing here.
+            // The platform sends the identity beside the tokens, so a
+            // token whose claims we cannot read is no longer fatal —
+            // hence `?? {}` rather than refusing here.
             const claims = decodeJwtClaims(tokens.accessToken) ?? {};
 
-            const who = facilitatorFromClaims(claims, userId);
+            const who = resolveFacilitator(claims, user);
             if (!who) {
                 // Refused rather than guessed: with neither an explicit
                 // userId nor a usable id claim, every facilitator's work

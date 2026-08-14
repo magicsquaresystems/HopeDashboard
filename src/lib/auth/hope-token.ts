@@ -55,6 +55,20 @@ export type HopeFacilitator = {
 };
 
 /**
+ * The `user` object the platform returns beside the tokens on both
+ * `/exchange` and `/refresh`.
+ *
+ * Only `userId` is depended on. The other two are read when present and
+ * fall back to the access token's claims when not, so a deployment that
+ * omits them still signs people in.
+ */
+export type HopeUser = {
+    userId: string;
+    email?: string;
+    screenName?: string;
+};
+
+/**
  * Claim names to try, most standard first.
  *
  * The platform has not published its claim set yet, so this is a
@@ -117,30 +131,30 @@ function firstString(
 /**
  * Who the platform says this is.
  *
- * `preferredId` is the `userId` the platform returns alongside the tokens.
- * It wins over the token's claims when present: it is an explicit field
- * the platform chose to send us, where the claim names are still inferred.
- * The two should agree, and this keeps working if they ever do not.
+ * `user` is the identity sent beside the tokens, and it wins field by
+ * field over the access token's claims: those are values the platform
+ * chose to send, where the claim names are inferred. Field by field
+ * matters — a payload carrying a userId but no screen name should fall
+ * through to the claims for that one field, not drag the whole identity
+ * back with it.
  *
- * The user id is required — it is what we cache and key work against, so
- * without it we genuinely cannot proceed. Email is *not* required: it is
- * secondary here, and refusing to sign in over a missing secondary field
- * would block the whole integration on a claim name we are still waiting
- * to have confirmed. When it is absent we synthesise a stable address
- * from the id and warn, which keeps attribution unique and per-person
- * while staying obviously artificial in the data. A synthetic address
- * also fails safe against `FACILITATOR_COHORTS`: it matches no entry, so
+ * The user id is required; without it we cannot attribute work to anyone
+ * in particular. Email is not. When neither source supplies one we
+ * synthesise a stable address from the id and warn: attribution stays
+ * unique per person while staying obviously artificial in the data, and
+ * it fails safe against `FACILITATOR_COHORTS`, matching no entry so
  * `allowlist` mode grants nothing.
  */
-export function facilitatorFromClaims(
+export function resolveFacilitator(
     claims: Record<string, unknown>,
-    preferredId?: string | null,
+    user?: HopeUser | null,
 ): HopeFacilitator | null {
-    const hopeUserId = preferredId?.trim() || firstString(claims, ID_CLAIMS);
+    const hopeUserId = user?.userId?.trim() || firstString(claims, ID_CLAIMS);
     if (!hopeUserId) return null;
 
-    const email = firstString(claims, EMAIL_CLAIMS);
-    const name = firstString(claims, NAME_CLAIMS) ?? undefined;
+    const email = user?.email?.trim() || firstString(claims, EMAIL_CLAIMS);
+    const name =
+        user?.screenName?.trim() || firstString(claims, NAME_CLAIMS) || undefined;
 
     return {
         hopeUserId,
@@ -173,13 +187,35 @@ export function needsRefresh(
 
 export type HopeTokenResponse = {
     tokens: HopeTokens;
-    /**
-     * The platform's `userId`, sent alongside the tokens on both
-     * endpoints. Optional because a deployment predating that addition
-     * omits it, in which case identity falls back to the token's claims.
-     */
-    userId?: string;
+    /** Absent if the platform sent no readable `user` object. */
+    user?: HopeUser;
 };
+
+/**
+ * The `user` object out of a token response.
+ *
+ * Casing is tried both ways on every field. The platform is ASP.NET and
+ * declares these PascalCase; whether they reach the wire camelCased
+ * depends on the serializer's naming policy, and guessing wrong would
+ * silently drop the identity rather than fail loudly.
+ */
+function userFromBody(raw: Record<string, unknown>): HopeUser | null {
+    const nested = raw.user ?? raw.User;
+    if (!nested || typeof nested !== "object" || Array.isArray(nested)) {
+        return null;
+    }
+    const source = nested as Record<string, unknown>;
+
+    const userId = firstString(source, ["userId", "UserId"]);
+    if (!userId) return null;
+
+    return {
+        userId,
+        email: firstString(source, ["email", "Email"]) ?? undefined,
+        screenName:
+            firstString(source, ["screenName", "ScreenName"]) ?? undefined,
+    };
+}
 
 /**
  * Validate an `/api/auth/exchange` or `/api/auth/refresh` body.
@@ -187,11 +223,6 @@ export type HopeTokenResponse = {
  * Both endpoints return the same shape, and both rotate the refresh
  * token, so a caller must always store what comes back rather than
  * keeping the token it sent.
- *
- * `userId` is accepted in either casing. The platform is ASP.NET and
- * declares the property as `UserId`; whether it reaches the wire as
- * `userId` depends on the serializer's naming policy, and guessing wrong
- * would silently drop the identity we just asked them to send.
  */
 export function parseTokenResponse(
     body: unknown,
@@ -209,6 +240,6 @@ export function parseTokenResponse(
             refreshToken,
             expiresAt: expiresAtFrom(raw.expiresIn, nowMs),
         },
-        userId: firstString(raw, ["userId", "UserId"]) ?? undefined,
+        user: userFromBody(raw) ?? undefined,
     };
 }

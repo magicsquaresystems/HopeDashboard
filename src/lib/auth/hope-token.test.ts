@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
     decodeJwtClaims,
     expiresAtFrom,
-    facilitatorFromClaims,
     hasSyntheticEmail,
     needsRefresh,
     parseTokenResponse,
     REFRESH_SKEW_MS,
+    resolveFacilitator,
 } from "@/lib/auth/hope-token";
 
 /** Builds a JWT-shaped string. The signature is never checked (see the
@@ -45,9 +45,9 @@ describe("decodeJwtClaims", () => {
     });
 });
 
-describe("facilitatorFromClaims", () => {
+describe("resolveFacilitator", () => {
     it("prefers sub for the user id", () => {
-        const who = facilitatorFromClaims({
+        const who = resolveFacilitator({
             sub: "u-1",
             userId: "ignored",
             email: "fac@hopemove.org",
@@ -56,66 +56,91 @@ describe("facilitatorFromClaims", () => {
     });
 
     it("falls back through the other id claim names", () => {
-        expect(facilitatorFromClaims({ userId: "u-2" })?.hopeUserId).toBe("u-2");
-        expect(facilitatorFromClaims({ id: "u-3" })?.hopeUserId).toBe("u-3");
+        expect(resolveFacilitator({ userId: "u-2" })?.hopeUserId).toBe("u-2");
+        expect(resolveFacilitator({ id: "u-3" })?.hopeUserId).toBe("u-3");
     });
 
     it("accepts a numeric id", () => {
         // Platform ids are often ints, and JSON keeps them as numbers.
-        expect(facilitatorFromClaims({ sub: 4210 })?.hopeUserId).toBe("4210");
+        expect(resolveFacilitator({ sub: 4210 })?.hopeUserId).toBe("4210");
     });
 
     it("returns null when no id claim is present", () => {
         // The whole point of failing here: without an id we would attribute
         // every facilitator's work to the same empty string.
-        expect(facilitatorFromClaims({ email: "fac@hopemove.org" })).toBeNull();
-        expect(facilitatorFromClaims({})).toBeNull();
+        expect(resolveFacilitator({ email: "fac@hopemove.org" })).toBeNull();
+        expect(resolveFacilitator({})).toBeNull();
     });
 
-    it("prefers the platform's explicit userId over the token's claims", () => {
-        // `userId` is a field the platform chose to send; the claim names
-        // are still inferred. They should agree, and this keeps working if
-        // they ever do not.
-        const who = facilitatorFromClaims({ sub: "from-claim" }, "from-response");
-        expect(who?.hopeUserId).toBe("from-response");
-    });
-
-    it("falls back to the claims when no userId was sent", () => {
-        expect(
-            facilitatorFromClaims({ sub: "from-claim" }, undefined)?.hopeUserId,
-        ).toBe("from-claim");
-        expect(facilitatorFromClaims({ sub: "from-claim" }, "  ")?.hopeUserId).toBe(
-            "from-claim",
+    it("prefers the platform's user object over the token's claims", () => {
+        const who = resolveFacilitator(
+            { sub: "from-claim", email: "claim@hopemove.org", name: "From Claim" },
+            {
+                userId: "from-platform",
+                email: "platform@hopemove.org",
+                screenName: "From Platform",
+            },
         );
+        expect(who).toEqual({
+            hopeUserId: "from-platform",
+            email: "platform@hopemove.org",
+            name: "From Platform",
+        });
     });
 
-    it("identifies a facilitator from userId alone, with unreadable claims", () => {
-        // An opaque access token is no longer fatal now the platform sends
-        // the id separately.
-        const who = facilitatorFromClaims({}, "hope-user-77");
+    it("fills each field independently", () => {
+        // A payload with a userId but no screen name should fall through to
+        // the claims for that one field, not drag the whole identity back.
+        const who = resolveFacilitator(
+            { sub: "from-claim", email: "claim@hopemove.org", name: "From Claim" },
+            { userId: "from-platform" },
+        );
+        expect(who).toEqual({
+            hopeUserId: "from-platform",
+            email: "claim@hopemove.org",
+            name: "From Claim",
+        });
+    });
+
+    it("falls back to the claims when no user object was sent", () => {
+        expect(
+            resolveFacilitator({ sub: "from-claim" }, undefined)?.hopeUserId,
+        ).toBe("from-claim");
+        expect(
+            resolveFacilitator({ sub: "from-claim" }, { userId: "  " })?.hopeUserId,
+        ).toBe("from-claim");
+    });
+
+    it("identifies a facilitator from the user object alone", () => {
+        // An opaque access token is not fatal now the platform sends the
+        // identity separately.
+        const who = resolveFacilitator(
+            {},
+            { userId: "hope-user-77", email: "fac@hopemove.org" },
+        );
         expect(who?.hopeUserId).toBe("hope-user-77");
-        expect(hasSyntheticEmail(who!.email)).toBe(true);
+        expect(hasSyntheticEmail(who!.email)).toBe(false);
     });
 
     it("lowercases the email", () => {
-        const who = facilitatorFromClaims({ sub: "u-1", email: "Fac@HopeMove.org" });
+        const who = resolveFacilitator({ sub: "u-1", email: "Fac@HopeMove.org" });
         expect(who?.email).toBe("fac@hopemove.org");
     });
 
     it("synthesises an email when the claims carry none", () => {
-        const who = facilitatorFromClaims({ sub: "u-9" });
+        const who = resolveFacilitator({ sub: "u-9" });
         expect(who?.email).toBe("u-9@hope.invalid");
         expect(hasSyntheticEmail(who!.email)).toBe(true);
     });
 
     it("does not mark a real email as synthetic", () => {
-        const who = facilitatorFromClaims({ sub: "u-1", email: "fac@hopemove.org" });
+        const who = resolveFacilitator({ sub: "u-1", email: "fac@hopemove.org" });
         expect(hasSyntheticEmail(who!.email)).toBe(false);
     });
 
     it("treats a blank claim as absent", () => {
-        expect(facilitatorFromClaims({ sub: "   " })).toBeNull();
-        expect(facilitatorFromClaims({ sub: "u-1", name: "  " })?.name).toBeUndefined();
+        expect(resolveFacilitator({ sub: "   " })).toBeNull();
+        expect(resolveFacilitator({ sub: "u-1", name: "  " })?.name).toBeUndefined();
     });
 });
 
@@ -166,7 +191,11 @@ describe("parseTokenResponse", () => {
         expect(
             parseTokenResponse(
                 {
-                    userId: "hope-user-77",
+                    user: {
+                        userId: "hope-user-77",
+                        screenName: "Test Facilitator",
+                        email: "fac@hopemove.org",
+                    },
                     accessToken: "at",
                     refreshToken: "rt",
                     expiresIn: 900,
@@ -179,38 +208,58 @@ describe("parseTokenResponse", () => {
                 refreshToken: "rt",
                 expiresAt: now + 900_000,
             },
-            userId: "hope-user-77",
+            user: {
+                userId: "hope-user-77",
+                screenName: "Test Facilitator",
+                email: "fac@hopemove.org",
+            },
         });
     });
 
-    it("accepts userId in either casing", () => {
-        // The platform declares the property as `UserId`; whether it
-        // reaches the wire camelCased depends on the serializer, and
-        // guessing wrong would silently drop the identity.
+    it("accepts the user object and its fields in either casing", () => {
+        // The platform declares these PascalCase; whether they reach the
+        // wire camelCased depends on the serializer, and guessing wrong
+        // would silently drop the identity.
         expect(
             parseTokenResponse(
-                { UserId: "hope-user-77", accessToken: "at", refreshToken: "rt" },
+                {
+                    User: {
+                        UserId: "hope-user-77",
+                        Email: "fac@hopemove.org",
+                        ScreenName: "Test Facilitator",
+                    },
+                    accessToken: "at",
+                    refreshToken: "rt",
+                },
                 now,
-            )?.userId,
-        ).toBe("hope-user-77");
+            )?.user,
+        ).toEqual({
+            userId: "hope-user-77",
+            email: "fac@hopemove.org",
+            screenName: "Test Facilitator",
+        });
     });
 
     it("accepts a numeric userId", () => {
         expect(
             parseTokenResponse(
-                { userId: 4210, accessToken: "at", refreshToken: "rt" },
+                { user: { userId: 4210 }, accessToken: "at", refreshToken: "rt" },
                 now,
-            )?.userId,
+            )?.user?.userId,
         ).toBe("4210");
     });
 
-    it("leaves userId undefined when the platform omits it", () => {
-        // A deployment predating the addition still has to work; identity
-        // then comes from the token's claims.
-        expect(
-            parseTokenResponse({ accessToken: "at", refreshToken: "rt" }, now)
-                ?.userId,
-        ).toBeUndefined();
+    it("leaves user undefined when the platform sends none", () => {
+        // Identity then comes from the token's claims, which still carry
+        // the id, so sign-in keeps working.
+        for (const body of [
+            { accessToken: "at", refreshToken: "rt" },
+            { user: null, accessToken: "at", refreshToken: "rt" },
+            { user: "nope", accessToken: "at", refreshToken: "rt" },
+            { user: {}, accessToken: "at", refreshToken: "rt" },
+        ]) {
+            expect(parseTokenResponse(body, now)?.user).toBeUndefined();
+        }
     });
 
     it("rejects a response missing either token", () => {
