@@ -46,13 +46,14 @@ dev-server.log
 
 .playwright-mcp/
 
-# Cohort bundles are committed so the dashboard is self-contained on any
-# host (see README → Participant data). Other ad-hoc files dropped into
-# `local/` are ignored.
+# Nothing under `local/` is committed.
+#
+# The cohort bundles used to be, via negations here, so the dashboard was
+# self-contained on any host. That is not a trade worth making: the bundles
+# hold real participant free-text from a health programme, and this repository
+# is public. Obtain them out of band and drop them in — the app reads them
+# from disk and does not care how they arrived.
 local/*
-!local/iih-coh10-190325.json
-!local/iih-coh11-170925.json
-!local/iih-coh12-110226.json
 
 # Ad-hoc Playwright screenshots and scratch
 viewport-*.png

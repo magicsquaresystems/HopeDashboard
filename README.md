@@ -107,12 +107,18 @@ sides.
 
 ## Participant data
 
-`local/iih-coh*.json` contain **real cohort data** from the HOPE
-platform. Display names are pseudonymised (`P1`, `P2`, …) but the post
-free-text is genuine participant writing, including health disclosures.
-**This repository must remain private** and its contents treated as
-confidential; do not display raw bundles on a shared screen. Regenerate
-bundles from platform exports with `scripts/extract-iih-cohort.mjs`.
+`local/iih-coh*.json` contain **real cohort data** from the HOPE platform.
+Display names are pseudonymised (`P1`, `P2`, …) but the post free-text is
+genuine participant writing, including health disclosures. Treat it as
+confidential and do not display raw bundles on a shared screen.
+
+**The bundles are not in this repository.** Everything under `local/` is
+ignored. Obtain them out of band from the project owner and drop them in —
+the app reads them from disk and does not care how they got there. Or
+regenerate them from platform exports with `scripts/extract-iih-cohort.mjs`.
+
+Without them the app builds and runs; cohort pages will report the bundle
+as missing.
 
 These bundles are an interim data source. The platform API replacing
 them delivers the same underlying records; the conversion into the
