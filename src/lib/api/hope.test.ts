@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { programmeLengthFrom, toCohortList, toCohortMeta } from "@/lib/api/hope";
+import {
+    programmeLengthFrom,
+    toCohortList,
+    toCohortMeta,
+    toPlatformActivityType,
+} from "@/lib/api/hope";
 
 /** The example from the platform engineer's integration note, verbatim.
  *  If the real endpoint disagrees with this, this fixture is what to
@@ -94,6 +99,42 @@ describe("programmeLengthFrom", () => {
     it("never returns zero", () => {
         // A zero-length programme would divide by nothing downstream.
         expect(programmeLengthFrom("2026-01-01", "2026-01-02")).toBe(7);
+    });
+});
+
+describe("toPlatformActivityType", () => {
+    it("maps the three types facilitators actually reply to", () => {
+        // Measured across all three cohorts: GoalSetting 152, Gratitude 77,
+        // MyHOPE 6.
+        expect(toPlatformActivityType("GoalSetting")).toBe("GoalSetting");
+        expect(toPlatformActivityType("Gratitude")).toBe("Gratitude");
+        expect(toPlatformActivityType("MyHOPE")).toBe("MyHOPE");
+    });
+
+    it("maps forum activity to Post under either of our names", () => {
+        // `Discussion` on an activity record, `discussion_post` on an event.
+        expect(toPlatformActivityType("Discussion")).toBe("Post");
+        expect(toPlatformActivityType("discussion_post")).toBe("Post");
+        expect(toPlatformActivityType("Post")).toBe("Post");
+    });
+
+    it("is case and whitespace insensitive", () => {
+        expect(toPlatformActivityType("  goalsetting ")).toBe("GoalSetting");
+        expect(toPlatformActivityType("MYHOPE")).toBe("MyHOPE");
+    });
+
+    it("returns null for Emotions", () => {
+        // Not an oversight on either side: facilitators never reply to an
+        // Emotions entry, so the platform has no value for one.
+        expect(toPlatformActivityType("Emotions")).toBeNull();
+    });
+
+    it("returns null rather than guessing at anything unknown", () => {
+        // A reply filed under the wrong activity type attaches to the wrong
+        // record, on a live programme. Refusing is the only safe default.
+        for (const bad of ["", null, undefined, "Wellbeing", "login"]) {
+            expect(toPlatformActivityType(bad)).toBeNull();
+        }
     });
 });
 

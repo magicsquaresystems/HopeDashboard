@@ -109,6 +109,55 @@ export function toCohortList(payload: unknown): CohortMeta[] {
         .filter((c): c is CohortMeta => c !== null);
 }
 
+/** The values `POST /api/dashboard/comment` accepts for `activityType`. */
+export type PlatformActivityType =
+    | "Gratitude"
+    | "GoalSetting"
+    | "MyHOPE"
+    | "Post";
+
+/**
+ * Our activity type, in the platform's vocabulary.
+ *
+ * `Emotions` maps to nothing and that is correct, not an oversight:
+ * across all three cohorts facilitators replied to GoalSetting (152),
+ * Gratitude (77) and MyHOPE (6) and never to an Emotions entry. The
+ * platform has no value for it because there is nothing to post.
+ *
+ * Forum activity is `Post` on their side. Ours arrives as `Discussion`
+ * on an activity record and `discussion_post` on an event, so both are
+ * accepted.
+ *
+ * Returns `null` rather than guessing. Posting a reply under the wrong
+ * activity type would attach it to the wrong record on a live programme.
+ */
+export function toPlatformActivityType(
+    activityType: string | null | undefined,
+): PlatformActivityType | null {
+    switch ((activityType ?? "").trim().toLowerCase()) {
+        case "gratitude":
+            return "Gratitude";
+        case "goalsetting":
+            return "GoalSetting";
+        case "myhope":
+            return "MyHOPE";
+        case "discussion":
+        case "discussion_post":
+        case "post":
+            return "Post";
+        default:
+            return null;
+    }
+}
+
+export type PostCommentInput = {
+    cohortId: number;
+    activityType: PlatformActivityType;
+    /** The platform's id for the activity record being replied to. */
+    recordId: number;
+    comment: string;
+};
+
 export function createHopeClient(opts: {
     baseUrl: string;
     accessToken: string;
@@ -130,6 +179,24 @@ export function createHopeClient(opts: {
                 path: "/api/dashboard/cohorts",
             });
             return toCohortList(payload);
+        },
+
+        /**
+         * Publish a facilitator's reply to a participant.
+         *
+         * The only call in this codebase that writes something a
+         * participant will read. Everything else the dashboard produces
+         * is a draft or a research record, so this is the one where a
+         * mistake reaches a person on a health programme rather than a
+         * row in a dataset. Callers must have a human's explicit
+         * confirmation before reaching it.
+         */
+        async postComment(input: PostCommentInput): Promise<void> {
+            await client.request<unknown>({
+                method: "POST",
+                path: "/api/dashboard/comment",
+                body: input,
+            });
         },
     };
 }
