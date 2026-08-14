@@ -4,11 +4,17 @@ Runs against a live `docker compose up` (or two locally-running uvicorn
 processes). Writes a markdown summary to `outputs/smoke_summary.md` so a
 fresh shell can read the result without re-parsing logs.
 
+The two services authenticate differently and this script must too: comment-gen
+verifies an `X-HMAC-Signature` over the raw body, while engagement_ml checks a
+shared `X-API-Key`. Signing a risk request gets a 401, so they do not share a
+helper.
+
 Usage:
     python scripts/smoke_e2e.py \
         --comment-url http://localhost:8001 \
         --dropout-url http://localhost:8000 \
         --secret dev-secret \
+        --risk-api-key dev-key-change-me \
         --auth-mode disabled
 """
 
@@ -49,12 +55,34 @@ def post_signed(
     payload: dict,
     secret: str,
     auth_mode: str,
+    timeout: float = 300.0,
 ) -> httpx.Response:
+    """POST to comment-gen, HMAC-signing the exact bytes sent.
+
+    The default timeout is generous on purpose. A three-persona draft set was
+    measured at 99-175 s on a T4 because personas and their policy retries
+    decode sequentially, so the old 120 s ceiling failed the smoke test on a
+    perfectly healthy service.
+    """
     body = json.dumps(payload).encode()
     headers = {"Content-Type": "application/json"}
     if auth_mode != "disabled":
         headers["X-HMAC-Signature"] = sign(secret, body)
-    return client.post(url, content=body, headers=headers, timeout=120.0)
+    return client.post(url, content=body, headers=headers, timeout=timeout)
+
+
+def post_risk(
+    client: httpx.Client,
+    url: str,
+    payload: dict,
+    api_key: str,
+    auth_mode: str,
+) -> httpx.Response:
+    """POST to engagement_ml, which gates on `X-API-Key`, not on a signature."""
+    headers = {"Content-Type": "application/json"}
+    if auth_mode != "disabled":
+        headers["X-API-Key"] = api_key
+    return client.post(url, json=payload, headers=headers, timeout=60.0)
 
 
 def wait_for(client: httpx.Client, url: str, label: str, timeout_s: int = 60) -> CheckResult:
@@ -82,12 +110,17 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--comment-url", default="http://localhost:8001")
     ap.add_argument("--dropout-url", default="http://localhost:8000")
-    ap.add_argument("--secret", default="dev-secret")
+    ap.add_argument("--secret", default="dev-secret", help="comment-gen HMAC key")
+    ap.add_argument(
+        "--risk-api-key",
+        default="dev-key-change-me",
+        help="engagement_ml X-API-Key (matches docker-compose's default)",
+    )
     ap.add_argument(
         "--auth-mode",
         default="disabled",
         choices=["disabled", "enabled"],
-        help="when 'enabled', requests are HMAC-signed",
+        help="when 'enabled', sign comment-gen requests and key risk requests",
     )
     ap.add_argument(
         "--out",
@@ -104,25 +137,35 @@ def main() -> int:
         results.append(wait_for(client, f"{args.comment_url}/health", "comment-api"))
 
         # 1) Dropout /batch.
+        #
+        # The service takes raw event histories and derives its own features;
+        # the pre-computed `features` dict this script used to send was
+        # retired and now 422s. Events must fall inside
+        # [effective_start, effective_start + score_at_day) or the request is
+        # rejected before scoring. This participant goes quiet after day 2 of
+        # a 28-day window, so a healthy service should return high risk.
         participant = {
             "participant_id": "smoke-001",
-            "features": {
-                "current_inactive_streak": 9,
-                "days_since_last_login": 11,
-                "cum_login_count": 3,
-                "cum_activity_count": 1,
-                "cum_unique_pages": 14,
-                "engagement_slope": -0.4,
-                "wrote_first_week_binary": 0,
-                "received_comment_first_week_binary": 0,
-            },
+            "effective_start": "2026-01-01T00:00:00Z",
+            "events": [
+                {"timestamp": "2026-01-01T09:30:00Z", "event_type": "login"},
+                {
+                    "timestamp": "2026-01-02T10:00:00Z",
+                    "event_type": "activity",
+                    "activity_type": "GoalSetting",
+                    "words_written": 12,
+                },
+            ],
+            "cohort_size": 30,
+            "programme_length_days": 42,
+            "score_at_day": 28,
         }
         t0 = time.time()
-        r = post_signed(
+        r = post_risk(
             client,
             f"{args.dropout_url}/batch",
             {"participants": [participant]},
-            args.secret,
+            args.risk_api_key,
             args.auth_mode,
         )
         latency = (time.time() - t0) * 1000

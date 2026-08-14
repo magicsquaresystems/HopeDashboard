@@ -14,6 +14,9 @@ mkdir -p outputs
 
 AUTH_MODE="${HOPE_API_AUTH:-disabled}"
 SECRET="${HOPE_API_SECRET:-dev-secret}"
+# The risk service gates on X-API-Key, not on the HMAC secret. Default matches
+# docker-compose.yml's `API_KEY: ${HOPE_RISK_API_KEY:-dev-key-change-me}`.
+RISK_API_KEY="${HOPE_RISK_API_KEY:-dev-key-change-me}"
 COMMENT_URL="${COMMENT_GEN_URL:-http://localhost:8001}"
 DROPOUT_URL="${DROPOUT_API_URL:-http://localhost:8000}"
 
@@ -29,6 +32,7 @@ python3 scripts/smoke_e2e.py \
     --comment-url "$COMMENT_URL" \
     --dropout-url "$DROPOUT_URL" \
     --secret "$SECRET" \
+    --risk-api-key "$RISK_API_KEY" \
     --auth-mode "$AUTH_MODE" \
     --out "outputs/smoke_summary.md"
 
