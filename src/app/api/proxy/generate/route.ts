@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { commentGen } from "@/lib/api/server";
+import { requireFacilitatorEmail } from "@/lib/auth/facilitator";
 import type { GenerateRequest } from "@/lib/api/commentGen";
 import { withApiErrors } from "../_errors";
 
@@ -22,8 +23,23 @@ import { withApiErrors } from "../_errors";
  */
 export const maxDuration = 300;
 
-// Auth removed — gating delegated to the Hope Move platform layer.
+/**
+ * Requires a session.
+ *
+ * This was briefly ungated on the reasoning that the platform fronts the
+ * dashboard. It does not front this route: `proxy.ts` deliberately
+ * excludes `/api/*` from the page gate, so "delegated to the platform"
+ * meant delegated to nothing. Left open, it is an unauthenticated
+ * 300-second endpoint that spends GPU time on demand — a cost and abuse
+ * surface as much as a data one, and more so now that it points at paid
+ * hardware.
+ *
+ * `requireFacilitatorEmail` throws `ApiError(401)`, which `withApiErrors`
+ * renders as JSON and `classifyGenerateError` already shows as "Sign in
+ * again" — so there is no UI work implied by this.
+ */
 export const POST = withApiErrors(async (req: NextRequest) => {
+    await requireFacilitatorEmail();
     const body = (await req.json()) as GenerateRequest;
     const data = await commentGen().generate(body);
     return NextResponse.json(data);

@@ -18,6 +18,13 @@ import { withApiErrors } from "../../_errors";
  *
  * Both upstream endpoints are unauthenticated reads; the HF bearer for
  * the private Space is injected server-side as usual.
+ *
+ * Deliberately the one route under `/api/proxy` with no session check,
+ * so it can be curled as a liveness probe without minting a session. It
+ * returns no participant data and spends no model time; the only thing
+ * it discloses is the configured adapter id. If that ever becomes
+ * unacceptable, gate it — the chip that consumes it only ever renders
+ * for a signed-in facilitator, so nothing in the UI would notice.
  */
 export const GET = withApiErrors(async () => {
     const client = commentGen();
