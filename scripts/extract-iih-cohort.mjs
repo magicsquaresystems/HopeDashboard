@@ -145,7 +145,7 @@ function extractUsers(ua, targetCohortId) {
  * "get to know me" Q&A and is the best profile content the platform has;
  * it was previously read and discarded.
  */
-function buildProfileLookup(up) {
+export function buildProfileLookup(up) {
     const out = new Map();
     for (const m of up.modules ?? []) {
         for (const profile of m.userProfiles ?? []) {
@@ -209,7 +209,7 @@ function picks0Module(users) {
  * a participant post. This is the authoritative signal (low-vs-high
  * user-id heuristics are unreliable).
  */
-function buildFacilitatorIdSet(fc) {
+export function buildFacilitatorIdSet(fc) {
     const ids = new Set();
     for (const m of fc.modules ?? []) {
         for (const ua of m.userActivities ?? []) {
@@ -244,6 +244,11 @@ function buildFacilitatorIdSet(fc) {
  */
 function extractModuleDiscussions(dt, moduleId, cohortUserIds, uidToAlias, facilitatorIds) {
     const eventsByUser = new Map();
+    // Annotated because the dashboard imports this module and TypeScript
+    // infers a bare `{}` from the literal, which does not satisfy
+    // `CohortBundle.discussionThreads`. The annotation states what the
+    // loop below actually fills it with.
+    /** @type {Record<string, import("../src/lib/server/cohort-data").RealDiscussionThread>} */
     const threads = {};
     const mod = (dt.modules ?? []).find((m) => m.id === moduleId);
     if (!mod) return { eventsByUser, threads };
@@ -346,10 +351,33 @@ function eventFromActivity(a) {
 }
 
 
-function extractOne(ua, up, fc, dt, facilitatorIds, profileBy, modulesInProfile, cohortId) {
-    const meta = COHORT_REGISTRY[cohortId];
+/**
+ * The four platform documents in, one `CohortBundle` out.
+ *
+ * Exported and free of file IO on purpose. The Hope Move platform now
+ * serves these same four documents over HTTP — one cohort inside an
+ * array of one module — so the dashboard calls this at request time with
+ * fetched payloads while this script still calls it with parsed files.
+ * One implementation, so the live path cannot drift from the one whose
+ * output was reviewed.
+ *
+ * `meta` supplies what the documents do not carry: the cohort's code,
+ * start date and programme length. The CLI reads it from
+ * `COHORT_REGISTRY`; the dashboard takes it from
+ * `GET /api/dashboard/cohorts`.
+ */
+export function buildCohortBundle(
+    ua,
+    up,
+    fc,
+    dt,
+    facilitatorIds,
+    profileBy,
+    modulesInProfile,
+    cohortId,
+    meta,
+) {
     const users = extractUsers(ua, cohortId);
-    console.log(`\ncohort ${meta.code} (id=${cohortId}): ${users.length} learners`);
 
     if (!modulesInProfile.has(picks0Module(users))) {
         console.warn(
@@ -520,7 +548,7 @@ function extractOne(ua, up, fc, dt, facilitatorIds, profileBy, modulesInProfile,
         };
     });
 
-    const out = {
+    return {
         cohort: {
             id: cohortId,
             code: meta.code,
@@ -537,6 +565,26 @@ function extractOne(ua, up, fc, dt, facilitatorIds, profileBy, modulesInProfile,
         // activity.
         discussionThreads,
     };
+}
+
+/** CLI wrapper: build the bundle, write it, report what went in. */
+function extractOne(ua, up, fc, dt, facilitatorIds, profileBy, modulesInProfile, cohortId) {
+    const meta = COHORT_REGISTRY[cohortId];
+    const out = buildCohortBundle(
+        ua,
+        up,
+        fc,
+        dt,
+        facilitatorIds,
+        profileBy,
+        modulesInProfile,
+        cohortId,
+        meta,
+    );
+    const { participants, discussionThreads } = out;
+    console.log(
+        `\ncohort ${meta.code} (id=${cohortId}): ${participants.length} learners`,
+    );
 
     const outputPath = path.join(OUTPUT_DIR, `${meta.bundleSlug}.json`);
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -559,7 +607,7 @@ function extractOne(ua, up, fc, dt, facilitatorIds, profileBy, modulesInProfile,
         (p) => !p.bio.includes("No profile bio submitted yet"),
     ).length;
     const intN = participants.filter((p) => p.interview.length > 0).length;
-    console.log(`  profiles: ${bioN} bio, ${intN} interview Q&A (module ${picks[0].moduleId} has no profile export — only participants from earlier programmes have one)`);
+    console.log(`  profiles: ${bioN} bio, ${intN} interview Q&A (module ${out.cohort.moduleId} has no profile export — only participants from earlier programmes have one)`);
 }
 
 
@@ -589,4 +637,9 @@ function main() {
     }
 }
 
-main();
+// Only when run directly. The dashboard imports `buildCohortBundle` from
+// this module at request time, and an import that also ran the CLI would
+// try to read 66 MB of local exports on a server that has none.
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+    main();
+}

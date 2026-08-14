@@ -182,6 +182,45 @@ export function createHopeClient(opts: {
         },
 
         /**
+         * The four platform documents behind one cohort's bundle.
+         *
+         * Each mirrors one of the raw platform exports the dashboard has
+         * been reading from disk — same `{ modules: [...] }` shape, but
+         * scoped to a single cohort inside a single module. That is what
+         * lets `buildCohortBundle` consume either source unchanged.
+         *
+         * Fetched together because the conversion needs all four: user
+         * activity supplies the event stream, profiles the bios, and the
+         * other two contribute both their own records and events derived
+         * from them.
+         */
+        async fetchCohortDocuments(cohortId: number): Promise<{
+            userActivity: unknown;
+            userProfiles: unknown;
+            facilitatorComments: unknown;
+            discussionTopics: unknown;
+        }> {
+            const base = `/api/dashboard/cohorts/${cohortId}`;
+            const [
+                userActivity,
+                userProfiles,
+                facilitatorComments,
+                discussionTopics,
+            ] = await Promise.all([
+                client.request<unknown>({ path: `${base}/user-activity` }),
+                client.request<unknown>({ path: `${base}/user-profiles` }),
+                client.request<unknown>({ path: `${base}/facilitator-comments` }),
+                client.request<unknown>({ path: `${base}/discussion-topics` }),
+            ]);
+            return {
+                userActivity,
+                userProfiles,
+                facilitatorComments,
+                discussionTopics,
+            };
+        },
+
+        /**
          * Publish a facilitator's reply to a participant.
          *
          * The only call in this codebase that writes something a

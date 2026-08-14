@@ -3,12 +3,16 @@ import { NextResponse, type NextRequest } from "next/server";
 import { withApiErrors } from "@/app/api/proxy/_errors";
 import { requireFacilitatorEmail } from "@/lib/auth/facilitator";
 import { assertCohortAccess } from "@/lib/server/assignments";
-import { loadCohortBundle } from "@/lib/server/cohort-data";
+import { resolveCohortBundle } from "@/lib/server/cohort-data";
 
 /**
- * Returns the cohort bundle for `?cohortId=<id>` if present on disk, else
- * 204. Defaults to cohort 1680 (IIH-COH12) when the query param is missing
- * so prior single-cohort callers keep working without a code change.
+ * Returns the cohort bundle for `?cohortId=<id>`, else 204. Defaults to
+ * cohort 1680 (IIH-COH12) when the query param is missing so prior
+ * single-cohort callers keep working without a code change.
+ *
+ * The bundle comes from the Hope Move platform when this deployment is
+ * linked to it, and from the extracted file otherwise — `resolveCohortBundle`
+ * decides, and both run the same conversion.
  *
  * Gated on both sign-in and cohort assignment. This route hands over the
  * actual participant records — wellbeing scores, posts, profile answers —
@@ -26,7 +30,7 @@ export const GET = withApiErrors(async (req: NextRequest) => {
         );
     }
     await assertCohortAccess(email, cohortId);
-    const bundle = loadCohortBundle(cohortId);
+    const bundle = await resolveCohortBundle(cohortId);
     if (!bundle) return new NextResponse(null, { status: 204 });
     return NextResponse.json(bundle);
 });

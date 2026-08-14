@@ -19,6 +19,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { hopeConfig } from "@/lib/auth/hope-exchange";
+import { hopeSession } from "@/lib/auth/hope-session";
+import { hopeCohorts } from "@/lib/server/hope-cohorts";
+
 if (typeof window !== "undefined") {
     throw new Error(
         "cohort-data.ts must not be imported in client code (reads fs)",
@@ -189,4 +193,46 @@ export function loadCohortBundle(cohortId: number): CohortBundle | null {
     const bundle = JSON.parse(raw) as CohortBundle;
     _cache.set(cohortId, { bundle, mtimeMs });
     return bundle;
+}
+
+/**
+ * The bundle for a cohort, from whichever source this deployment has.
+ *
+ * Prefers the Hope Move platform when the session carries credentials
+ * for it and the cohort is one the platform knows; falls back to the
+ * extracted file otherwise. Both paths run the same conversion — see
+ * `sources/platform.ts` — so the only difference is where the four
+ * documents came from.
+ *
+ * A platform fetch that fails falls back to the file rather than
+ * throwing. The file is stale rather than wrong, and a facilitator
+ * looking at last week's export is in a better position than one looking
+ * at an error page. The failure is logged so the staleness is not
+ * silent.
+ */
+export async function resolveCohortBundle(
+    cohortId: number,
+): Promise<CohortBundle | null> {
+    const config = hopeConfig();
+    if (config) {
+        const session = await hopeSession();
+        const cohort = (await hopeCohorts())?.find((c) => c.id === cohortId);
+        if (session && cohort) {
+            try {
+                const { fetchCohortBundle } = await import(
+                    "@/lib/server/sources/platform"
+                );
+                return await fetchCohortBundle(cohort, {
+                    baseUrl: config.apiUrl,
+                    accessToken: session.tokens.accessToken,
+                });
+            } catch (err) {
+                console.error(
+                    `cohort ${cohortId}: platform fetch failed, falling back ` +
+                        `to the extracted file — ${(err as Error).message}`,
+                );
+            }
+        }
+    }
+    return loadCohortBundle(cohortId);
 }
