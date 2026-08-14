@@ -26,14 +26,12 @@ Cohort data currently ships as extracted bundles under `local/`
 to replace this; when it lands, an adapter in the server data layer
 (`src/lib/server/cohort-data.ts`) will convert its payloads into the
 same bundle shape the UI already consumes, so the change stays invisible
-to components. The expected shape is documented in
-[docs/INTEGRATION.md](docs/INTEGRATION.md).
+to components. The expected shape is documented in the INTEGRATION doc (see Documentation below).
 
 ## Quickstart — the whole stack, one command
 
 Needs Docker, plus sibling checkouts of `../comment_generation` and
-`../engagement_ml`. See [docs/OPERATIONS.md §1.1](docs/OPERATIONS.md)
-for the model bundles the risk service expects.
+`../engagement_ml`. See the OPERATIONS doc for the model bundles the risk service expects.
 
 ```bash
 cp .env.example .env              # fill in the secrets
@@ -119,8 +117,7 @@ bundles from platform exports with `scripts/extract-iih-cohort.mjs`.
 These bundles are an interim data source. The platform API replacing
 them delivers the same underlying records; the conversion into the
 bundle shape happens server-side in `src/lib/server/cohort-data.ts`,
-and the bundle contract is documented in
-[docs/INTEGRATION.md](docs/INTEGRATION.md).
+and the bundle contract is documented in the INTEGRATION doc.
 
 ## Development
 
@@ -152,9 +149,17 @@ The end-to-end demo uses cohort `IIH-COH12-110226` (id 1680) in module
 
 ## Documentation
 
-All deeper docs live in [docs/](docs/):
+The project documentation is **not kept in this repository** — it is public,
+and the docs carry hosting costs, infrastructure detail and Space/model
+identifiers. Ask the project owner for the current set:
 
-- [HANDOVER.md](docs/HANDOVER.md) — **start here if you are new to the project**: what to get access to, where the models live, hosting tiers, known gaps. Dated transition doc; delete it once the org transfer lands.
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — why the system is shaped this way
-- [INTEGRATION.md](docs/INTEGRATION.md) — API wire contract for platform engineers
-- [OPERATIONS.md](docs/OPERATIONS.md) — self-hosting, deploy paths, model roster, runbook
+- **HANDOVER** — start here if you are new: access checklist, where the models
+  live, hosting, known gaps
+- **ARCHITECTURE** — why the system is shaped this way
+- **INTEGRATION** — API wire contract for platform engineers
+- **OPERATIONS** — deploy paths, model roster, runbook
+- **HOSTING** — what the comment service costs to run, measured latency and
+  concurrency, and hardware options
+
+The API contract itself is owned by `comment_generation/docs/openapi.yaml` and
+is generated into `src/lib/api/types.ts`, so it stays in the code.

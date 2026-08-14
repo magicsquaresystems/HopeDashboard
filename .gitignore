@@ -60,6 +60,11 @@ final-*.png
 final2-*.png
 cohort-*.png
 hope-move dashboard.zip
-docs/plan.md
+
+# Project documentation is kept out of this repo: it is public, and the docs
+# carry hosting costs, infrastructure detail and Space/model identifiers that
+# should not be. They are maintained and shared with the team directly.
+# Already-published copies remain in this repo's git history.
+docs/
 
 .claude/settings.local.json
