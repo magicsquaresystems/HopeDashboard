@@ -46,29 +46,47 @@ export async function GET(req: NextRequest) {
         });
     }
 
-    let probe: Record<string, unknown>;
-    try {
-        const res = await fetch(`${config.apiUrl}/api/auth/exchange`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "X-Client-Id": config.clientId,
-                "X-Client-Secret": config.clientSecret,
-            },
-            body: JSON.stringify({ code: "diagnostic-probe" }),
-            cache: "no-store",
-            signal: AbortSignal.timeout(10_000),
-        });
-        probe = { reached: true, status: res.status };
-    } catch (err) {
-        probe = { reached: false, error: (err as Error).message };
-    }
+    // The platform team has custom error pages off on staging, so a 500
+    // body may carry the actual exception — the diagnosis we cannot see
+    // any other way. Truncated hard: enough for an exception message,
+    // not enough for anything else.
+    const probeUpstream = async (
+        path: string,
+        body: Record<string, string>,
+    ): Promise<Record<string, unknown>> => {
+        try {
+            const res = await fetch(`${config.apiUrl}${path}`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Client-Id": config.clientId,
+                    "X-Client-Secret": config.clientSecret,
+                },
+                body: JSON.stringify(body),
+                cache: "no-store",
+                signal: AbortSignal.timeout(10_000),
+            });
+            const text = await res.text();
+            return {
+                reached: true,
+                status: res.status,
+                body: text.slice(0, 800),
+            };
+        } catch (err) {
+            return { reached: false, error: (err as Error).message };
+        }
+    };
 
     return Response.json({
         configured: true,
         apiUrl: config.apiUrl,
         clientId: config.clientId,
         clientSecretLength: config.clientSecret.length,
-        probe,
+        exchange: await probeUpstream("/api/auth/exchange", {
+            code: "diagnostic-probe",
+        }),
+        refresh: await probeUpstream("/api/auth/refresh", {
+            refreshToken: "diagnostic-probe",
+        }),
     });
 }
