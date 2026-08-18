@@ -223,6 +223,11 @@ function userFromBody(raw: Record<string, unknown>): HopeUser | null {
  * Both endpoints return the same shape, and both rotate the refresh
  * token, so a caller must always store what comes back rather than
  * keeping the token it sent.
+ *
+ * The token fields are tried in both casings for the same reason the
+ * user object's are: the platform declares `AccessToken` / `RefreshToken`
+ * / `ExpiresIn` PascalCase, and its error bodies reach the wire that way
+ * (`{"Message": …}`), so the success body likely does too.
  */
 export function parseTokenResponse(
     body: unknown,
@@ -230,15 +235,14 @@ export function parseTokenResponse(
 ): HopeTokenResponse | null {
     if (!body || typeof body !== "object") return null;
     const raw = body as Record<string, unknown>;
-    const accessToken = raw.accessToken;
-    const refreshToken = raw.refreshToken;
-    if (typeof accessToken !== "string" || !accessToken.trim()) return null;
-    if (typeof refreshToken !== "string" || !refreshToken.trim()) return null;
+    const accessToken = firstString(raw, ["accessToken", "AccessToken"]);
+    const refreshToken = firstString(raw, ["refreshToken", "RefreshToken"]);
+    if (!accessToken || !refreshToken) return null;
     return {
         tokens: {
             accessToken,
             refreshToken,
-            expiresAt: expiresAtFrom(raw.expiresIn, nowMs),
+            expiresAt: expiresAtFrom(raw.expiresIn ?? raw.ExpiresIn, nowMs),
         },
         user: userFromBody(raw) ?? undefined,
     };

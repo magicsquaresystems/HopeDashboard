@@ -240,6 +240,37 @@ describe("parseTokenResponse", () => {
         });
     });
 
+    it("reads the fully PascalCase body the platform's serializer produces", () => {
+        // The platform's error bodies arrive as {"Message": …}, so the
+        // success body presumably keeps its declared casing too.
+        expect(
+            parseTokenResponse(
+                {
+                    User: {
+                        UserId: "hope-user-77",
+                        Email: "fac@hopemove.org",
+                        ScreenName: "Test Facilitator",
+                    },
+                    AccessToken: "at",
+                    RefreshToken: "rt",
+                    ExpiresIn: 900,
+                },
+                now,
+            ),
+        ).toEqual({
+            tokens: {
+                accessToken: "at",
+                refreshToken: "rt",
+                expiresAt: now + 900_000,
+            },
+            user: {
+                userId: "hope-user-77",
+                email: "fac@hopemove.org",
+                screenName: "Test Facilitator",
+            },
+        });
+    });
+
     it("accepts a numeric userId", () => {
         expect(
             parseTokenResponse(
