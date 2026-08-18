@@ -58,6 +58,14 @@ async function postJson(
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
+                Accept: "application/json",
+                // Node's fetch defaults Accept-Language to `*`, which the
+                // platform feeds to .NET CultureInfo — and `*` is not a
+                // culture, so every authenticated call 500s with
+                // CultureNotFoundException before reaching the exchange
+                // logic. A real locale sidesteps it; browsers always send
+                // one, which is why only server-to-server calls hit this.
+                "Accept-Language": "en-GB",
                 "X-Client-Id": config.clientId,
                 "X-Client-Secret": config.clientSecret,
             },

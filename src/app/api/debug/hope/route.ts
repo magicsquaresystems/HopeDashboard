@@ -59,6 +59,10 @@ export async function GET(req: NextRequest) {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
+                    Accept: "application/json",
+                    // Mirrors hope-exchange.ts: without a real locale the
+                    // platform 500s with CultureNotFoundException.
+                    "Accept-Language": "en-GB",
                     "X-Client-Id": config.clientId,
                     "X-Client-Secret": config.clientSecret,
                 },
