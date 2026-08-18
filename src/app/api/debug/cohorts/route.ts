@@ -40,29 +40,47 @@ export async function GET(req: NextRequest) {
         });
     }
 
-    try {
-        const res = await fetch(`${config.apiUrl}/api/dashboard/cohorts`, {
-            headers: {
-                Authorization: `Bearer ${session.tokens.accessToken}`,
-                Accept: "application/json",
-                "Accept-Language": "en-GB",
-            },
-            cache: "no-store",
-            signal: AbortSignal.timeout(10_000),
-        });
-        const text = await res.text();
-        return Response.json({
-            hopeUserId: session.hopeUserId,
-            tokenExpiresInS: Math.round(
-                (session.tokens.expiresAt - Date.now()) / 1000,
-            ),
-            status: res.status,
-            body: text.slice(0, 1500),
-        });
-    } catch (err) {
-        return Response.json({
-            hopeUserId: session.hopeUserId,
-            error: (err as Error).message,
-        });
+    // Three ways a legacy ASP.NET filter chain might want the token:
+    // standard bearer; bearer plus the client credential pair the
+    // exchange endpoints use; and the raw token with no scheme prefix.
+    const variants: Record<string, Record<string, string>> = {
+        bearer: {
+            Authorization: `Bearer ${session.tokens.accessToken}`,
+        },
+        bearerPlusClient: {
+            Authorization: `Bearer ${session.tokens.accessToken}`,
+            "X-Client-Id": config.clientId,
+            "X-Client-Secret": config.clientSecret,
+        },
+        rawToken: {
+            Authorization: session.tokens.accessToken,
+        },
+    };
+
+    const results: Record<string, unknown> = {};
+    for (const [name, auth] of Object.entries(variants)) {
+        try {
+            const res = await fetch(`${config.apiUrl}/api/dashboard/cohorts`, {
+                headers: {
+                    ...auth,
+                    Accept: "application/json",
+                    "Accept-Language": "en-GB",
+                },
+                cache: "no-store",
+                signal: AbortSignal.timeout(10_000),
+            });
+            const text = await res.text();
+            results[name] = { status: res.status, body: text.slice(0, 600) };
+        } catch (err) {
+            results[name] = { error: (err as Error).message };
+        }
     }
+
+    return Response.json({
+        hopeUserId: session.hopeUserId,
+        tokenExpiresInS: Math.round(
+            (session.tokens.expiresAt - Date.now()) / 1000,
+        ),
+        results,
+    });
 }
