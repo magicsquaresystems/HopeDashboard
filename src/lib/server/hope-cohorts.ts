@@ -14,6 +14,7 @@
  * still comes from files.
  */
 
+import { ApiError } from "@/lib/api/client";
 import { createHopeClient } from "@/lib/api/hope";
 import { type CohortMeta } from "@/lib/cohorts";
 import { hopeConfig } from "@/lib/auth/hope-exchange";
@@ -67,7 +68,22 @@ export async function hopeCohorts(): Promise<CohortMeta[] | null> {
         console.error(
             `hope cohorts: fetch failed — ${(err as Error).message}`,
         );
-        // Serve the stale list if we have one, otherwise nothing.
+        // An auth rejection is not an outage: the platform is refusing
+        // the very token its exchange issued, which means the dashboard
+        // API contract is broken and the platform cannot be the cohort
+        // authority at all right now. Treat it like an unconfigured
+        // integration — fall back to the env/database assignment and the
+        // local registry — rather than blanking every cohort until the
+        // platform's token validation is fixed. (Observed 2026-08-18:
+        // `/api/dashboard/cohorts` 401s freshly-exchanged tokens.)
+        if (
+            err instanceof ApiError &&
+            (err.status === 401 || err.status === 403)
+        ) {
+            return null;
+        }
+        // Everything else — network failure, 5xx, malformed body — keeps
+        // serving the stale list if we have one, otherwise nothing.
         //
         // Deliberately not falling through to `null` here: `null` sends
         // the caller to the env/database fallback, which in `open` mode
