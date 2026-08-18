@@ -201,10 +201,20 @@ export const config: NextAuthConfig = {
 
             const next = await refreshTokens(cfg, hope.refreshToken);
             if (!next) {
-                // Drop the dead pair rather than keeping it. Holding an
-                // expired token turns every downstream call into an
-                // opaque 401; clearing it lets the session end cleanly
-                // and send the facilitator back to the platform.
+                // The refresh fires REFRESH_SKEW_MS before expiry, so a
+                // failed attempt usually leaves an access token that is
+                // still good. Keep serving it and retry on the next
+                // request: with rotating refresh tokens and serverless
+                // instances, two concurrent requests can race the same
+                // rotation, and killing the session on the first loser
+                // signs a facilitator out mid-visit for no user-visible
+                // reason. Multiplied across many facilitators that is a
+                // steady drip of spurious sign-outs.
+                if (Date.now() < hope.expiresAt) return token;
+                // Actually dead. Drop the pair rather than keeping it:
+                // holding an expired token turns every downstream call
+                // into an opaque 401; clearing it lets the session end
+                // cleanly and send the facilitator back to the platform.
                 delete token.hope;
                 token.error = "hope_refresh_failed";
                 return token;
