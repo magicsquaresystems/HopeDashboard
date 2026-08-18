@@ -27,19 +27,40 @@ import type { CohortMeta } from "@/lib/cohorts";
  */
 const SEARCH_THRESHOLD = 4;
 
+/** Inside the programme window right now — the cohort a facilitator is
+ *  most likely here for. */
+function isLive(c: CohortMeta, nowMs: number): boolean {
+    const start = Date.parse(c.effectiveStart);
+    if (!Number.isFinite(start)) return false;
+    return start <= nowMs && nowMs < start + c.programmeLengthDays * 86_400_000;
+}
+
 export function CohortList({ cohorts }: { cohorts: CohortMeta[] }) {
     const [query, setQuery] = useState("");
 
+    // Live programmes first, then most recent first. Registry order is
+    // whatever the source happened to serve, which buries the current
+    // cohort under finished ones as soon as the list grows.
+    const ordered = useMemo(() => {
+        const nowMs = Date.now();
+        return [...cohorts].sort((a, b) => {
+            const liveDelta =
+                Number(isLive(b, nowMs)) - Number(isLive(a, nowMs));
+            if (liveDelta !== 0) return liveDelta;
+            return Date.parse(b.effectiveStart) - Date.parse(a.effectiveStart);
+        });
+    }, [cohorts]);
+
     const shown = useMemo(() => {
         const q = query.trim().toLowerCase();
-        if (!q) return cohorts;
-        return cohorts.filter(
+        if (!q) return ordered;
+        return ordered.filter(
             (c) =>
                 c.code.toLowerCase().includes(q) ||
                 c.moduleName.toLowerCase().includes(q) ||
                 String(c.id).includes(q),
         );
-    }, [cohorts, query]);
+    }, [ordered, query]);
 
     return (
         <>
@@ -70,7 +91,14 @@ export function CohortList({ cohorts }: { cohorts: CohortMeta[] }) {
                         <Link key={c.id} href={`/cohorts/${c.id}`}>
                             <Card className="h-full transition-shadow hover:shadow">
                                 <CardHeader>
-                                    <CardTitle>{c.code}</CardTitle>
+                                    <CardTitle className="flex items-center justify-between gap-2">
+                                        {c.code}
+                                        {isLive(c, Date.now()) && (
+                                            <span className="rounded-full border border-accent px-2 py-0.5 text-[10px] font-medium text-accent">
+                                                Live
+                                            </span>
+                                        )}
+                                    </CardTitle>
                                     <CardDescription>
                                         {c.moduleName}
                                     </CardDescription>
