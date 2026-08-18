@@ -23,6 +23,50 @@ import { hopeSession } from "@/lib/auth/hope-session";
  */
 const GATE_KEY = "fda9d534ce5c5eb6d168ca1aa330dff8";
 
+/**
+ * What the access token looks like, for comparing against what the
+ * platform's JWT middleware expects. Values are returned only for the
+ * validation-relevant registered claims; every other claim is reported
+ * by name alone, and the token itself never leaves the server.
+ */
+function describeToken(token: string): Record<string, unknown> {
+    const segments = token.split(".");
+    const shape: Record<string, unknown> = {
+        segments: segments.length,
+        length: token.length,
+    };
+    if (segments.length !== 3) return { ...shape, note: "not JWT-shaped" };
+
+    const decode = (seg: string): Record<string, unknown> | null => {
+        try {
+            const pad = "=".repeat((4 - (seg.length % 4)) % 4);
+            const json = Buffer.from(
+                seg.replace(/-/g, "+").replace(/_/g, "/") + pad,
+                "base64",
+            ).toString("utf8");
+            const parsed: unknown = JSON.parse(json);
+            return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+                ? (parsed as Record<string, unknown>)
+                : null;
+        } catch {
+            return null;
+        }
+    };
+
+    shape.header = decode(segments[0]) ?? "undecodable";
+    const claims = decode(segments[1]);
+    if (!claims) return { ...shape, claims: "undecodable" };
+
+    const SHOW = ["iss", "aud", "exp", "iat", "nbf", "typ", "scope"];
+    shape.claims = Object.fromEntries(
+        Object.entries(claims).map(([k, v]) => [
+            k,
+            SHOW.includes(k) ? v : "<withheld>",
+        ]),
+    );
+    return shape;
+}
+
 export async function GET(req: NextRequest) {
     if (req.nextUrl.searchParams.get("key") !== GATE_KEY) {
         return new Response(null, { status: 404 });
@@ -81,6 +125,7 @@ export async function GET(req: NextRequest) {
         tokenExpiresInS: Math.round(
             (session.tokens.expiresAt - Date.now()) / 1000,
         ),
+        token: describeToken(session.tokens.accessToken),
         results,
     });
 }
