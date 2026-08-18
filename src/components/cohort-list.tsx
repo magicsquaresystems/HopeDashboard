@@ -38,18 +38,22 @@ function isLive(c: CohortMeta, nowMs: number): boolean {
 export function CohortList({ cohorts }: { cohorts: CohortMeta[] }) {
     const [query, setQuery] = useState("");
 
+    // Captured once on mount so render stays pure (react-hooks/purity):
+    // liveness moves on the scale of days, so a stable per-visit value
+    // is also the honest one — the badge should not flicker mid-visit.
+    const [nowMs] = useState(() => Date.now());
+
     // Live programmes first, then most recent first. Registry order is
     // whatever the source happened to serve, which buries the current
     // cohort under finished ones as soon as the list grows.
     const ordered = useMemo(() => {
-        const nowMs = Date.now();
         return [...cohorts].sort((a, b) => {
             const liveDelta =
                 Number(isLive(b, nowMs)) - Number(isLive(a, nowMs));
             if (liveDelta !== 0) return liveDelta;
             return Date.parse(b.effectiveStart) - Date.parse(a.effectiveStart);
         });
-    }, [cohorts]);
+    }, [cohorts, nowMs]);
 
     const shown = useMemo(() => {
         const q = query.trim().toLowerCase();
@@ -93,7 +97,7 @@ export function CohortList({ cohorts }: { cohorts: CohortMeta[] }) {
                                 <CardHeader>
                                     <CardTitle className="flex items-center justify-between gap-2">
                                         {c.code}
-                                        {isLive(c, Date.now()) && (
+                                        {isLive(c, nowMs) && (
                                             <span className="rounded-full border border-accent px-2 py-0.5 text-[10px] font-medium text-accent">
                                                 Live
                                             </span>
