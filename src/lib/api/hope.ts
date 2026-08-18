@@ -169,6 +169,14 @@ export function createHopeClient(opts: {
     const client = createClient({
         baseUrl: opts.baseUrl,
         authToken: opts.accessToken,
+        // The platform 500s with CultureNotFoundException on Node fetch's
+        // default `Accept-Language: *` — the same crash hope-exchange.ts
+        // works around. Every bearer call here needs the real locale too,
+        // or the cohort list quietly fails closed to empty.
+        headers: {
+            Accept: "application/json",
+            "Accept-Language": "en-GB",
+        },
         fetchImpl: opts.fetchImpl,
     });
 

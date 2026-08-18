@@ -29,6 +29,12 @@ export type ApiClientOptions = {
      * Next.js Route Handler proxy.
      */
     cookie?: string;
+    /**
+     * Extra headers attached to every request from this client. Used by
+     * the Hope platform client, whose backend cannot survive Node
+     * fetch's default `Accept-Language: *` — see `createHopeClient`.
+     */
+    headers?: Record<string, string>;
     fetchImpl?: typeof fetch;
 };
 
@@ -79,7 +85,7 @@ export function createClient(opts: ApiClientOptions) {
             }
         }
 
-        const headers: Record<string, string> = {};
+        const headers: Record<string, string> = { ...opts.headers };
         let rawBody: string | undefined;
         if (body !== undefined) {
             rawBody = JSON.stringify(body);
