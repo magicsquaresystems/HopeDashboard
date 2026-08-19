@@ -72,3 +72,6 @@ hope-move dashboard.zip
 docs/
 
 .claude/settings.local.json
+
+# Local Playwright verification screenshots
+/*.png
