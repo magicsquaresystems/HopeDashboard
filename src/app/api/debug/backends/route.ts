@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
     const hfToken = process.env.HF_TOKEN?.trim();
     const dropoutUrl = process.env.DROPOUT_API_URL?.trim();
     const commentGenUrl = process.env.COMMENT_GEN_URL?.trim();
-    const authHeaders = hfToken
+    const authHeaders: Record<string, string> = hfToken
         ? { Authorization: `Bearer ${hfToken}` }
         : {};
 
