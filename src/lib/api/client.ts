@@ -92,14 +92,32 @@ export function createClient(opts: ApiClientOptions) {
             headers["Content-Type"] = "application/json";
         }
         const effectiveAuth = auth ?? (signed ? "hmac" : false);
+        // A missing credential is a deployment that was never configured,
+        // not a backend that broke. Thrown as `ApiError(503)` so the proxy
+        // layer reports it as exactly that: a bare `Error` there falls into
+        // the "upstream unreachable" branch, which returns 502 and puts this
+        // sentence in front of a facilitator, who then waits for a service
+        // that was never going to answer. The env var is named because the
+        // only person who can act on this is reading a log or a status page,
+        // and no secret is disclosed by saying which one is absent.
         if (effectiveAuth === "hmac") {
             if (!opts.sign) {
-                throw new Error("HMAC request requires `sign` option");
+                throw new ApiError(
+                    503,
+                    "This deployment is missing HOPE_API_SECRET, so the " +
+                        "comment service cannot be called.",
+                    "backend_not_configured",
+                );
             }
             headers["X-HMAC-Signature"] = await opts.sign(rawBody ?? "");
         } else if (effectiveAuth === "apiKey") {
             if (!opts.apiKey) {
-                throw new Error("API-key request requires `apiKey` option");
+                throw new ApiError(
+                    503,
+                    "This deployment is missing HOPE_RISK_API_KEY, so the " +
+                        "risk service cannot be called.",
+                    "backend_not_configured",
+                );
             }
             headers["X-API-Key"] = opts.apiKey;
         }
