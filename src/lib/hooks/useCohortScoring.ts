@@ -54,6 +54,11 @@ export function useCohortScoring(cohortId: number) {
 
     return {
         batch,
+        /** The underlying cohort-bundle query, exposed so the queue can
+         *  tell "the data failed to load" and "this cohort has no data"
+         *  apart from "everything loaded and the filter matched nobody"
+         *  — three states that used to collapse into the last one. */
+        bundle,
         /** Cohort started under a week ago — nothing is scoreable yet. */
         notStarted,
         /** Per-participant histories truncated to the selected week — the

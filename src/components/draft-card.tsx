@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+    Check,
+    Copy,
     Info,
     Loader2,
     RefreshCcw,
-    Send,
     Sparkles,
     ThumbsDown,
     ThumbsUp,
@@ -14,6 +15,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { useCopyToClipboard } from "@/lib/hooks/useCopyToClipboard";
 import { usePolishText } from "@/lib/hooks/api";
 import { cn } from "@/lib/utils";
 import type { Draft } from "@/lib/api/commentGen";
@@ -22,14 +24,14 @@ import type { Draft } from "@/lib/api/commentGen";
  * Prototype-style draft card.
  *
  *   ┌──────────────────────────────────────────────────────┐
- *   │ To: Jamie Cooper · in-app message    ⨂ Editable draft│
+ *   │ To: Jamie Cooper · paste into Hope Move  ⨂ Editable  │
  *   ├──────────────────────────────────────────────────────┤
  *   │                                                      │
  *   │  Hi Jamie — your walking goal is still waiting on    │  ← directly
  *   │  its first step. Want to try one walk this week...   │     editable
  *   │                                                      │
  *   ├──────────────────────────────────────────────────────┤
- *   │ ↻  195 chars                              ⋮  ✈ Send  │
+ *   │ ↻  195 chars                        ⋮  ⧉ Copy reply  │
  *   └──────────────────────────────────────────────────────┘
  *
  *  - One card, one draft (the parent tabs switch which persona is active)
@@ -39,6 +41,15 @@ import type { Draft } from "@/lib/api/commentGen";
  *  - Draft-quality feedback (👍/👎) is inline in the footer with a visible
  *    "Helpful?" prompt.
  *  - "What this draft is based on" disclosure stays below
+ *
+ * On "Copy reply" rather than "Send": this dashboard cannot deliver a
+ * message to a participant yet — the platform's publish endpoint exists
+ * but is switched off pending a safe test cohort. The previous Send
+ * button recorded the research event and marked the participant
+ * contacted while delivering nothing, which is a lie with clinical
+ * consequences. Copying is an action that genuinely happens, so it is
+ * what the button claims — and `onUse` (the research record + contacted
+ * marker) fires only after the clipboard write actually succeeds.
  */
 
 export type DraftContext = {
@@ -53,7 +64,10 @@ export type DraftContext = {
 type DraftCardProps = {
     draft: Draft;
     onThumb: (draftId: string, label: "up" | "down") => void;
-    onSend: (draftId: string, sentText: string, action: "accept" | "edit") => void;
+    /** Fired after the reply text has actually reached the clipboard —
+     *  the caller records the research event and marks the participant
+     *  contacted, so this must never fire on a failed copy. */
+    onUse: (draftId: string, sentText: string, action: "accept" | "edit") => void;
     onRegenerate?: () => void;
     regenerating?: boolean;
     pending?: boolean;
@@ -83,7 +97,7 @@ function isPersonalised(ctx: DraftContext): boolean {
 export function DraftCard({
     draft,
     onThumb,
-    onSend,
+    onUse,
     onRegenerate,
     regenerating,
     pending,
@@ -94,6 +108,8 @@ export function DraftCard({
     const [text, setText] = useState(draft.body);
     const [edited, setEdited] = useState(false);
     const [thumb, setThumb] = useState<"up" | "down" | null>(null);
+    const bodyRef = useRef<HTMLTextAreaElement>(null);
+    const clipboard = useCopyToClipboard();
 
     // Polish-with-AI state. `polishShadow` holds the pre-polish text so a
     // facilitator can roll back if the rephrased version isn't what they
@@ -153,9 +169,19 @@ export function DraftCard({
         onThumb(String(draft.draft_id), label);
     }
 
-    function clickSend() {
-        const action = edited ? "edit" : "accept";
-        onSend(String(draft.draft_id), text, action);
+    async function clickCopy() {
+        const ok = await clipboard.copy(text);
+        if (ok) {
+            // Only a real copy counts as using the draft — this is what
+            // records the research event and marks the participant
+            // contacted for colleagues.
+            onUse(String(draft.draft_id), text, edited ? "edit" : "accept");
+        } else {
+            // Clipboard refused (permissions, insecure context). Select
+            // the text so one keystroke finishes the job, and say so.
+            bodyRef.current?.focus();
+            bodyRef.current?.select();
+        }
     }
 
     const toName = recipientName ?? context?.displayName ?? "the participant";
@@ -170,7 +196,7 @@ export function DraftCard({
                         <span className="text-muted">To:</span>{" "}
                         <span className="font-medium text-text">{toName}</span>
                         <span className="ml-1.5 text-muted">
-                            · in-app message
+                            · paste into Hope Move
                         </span>
                     </div>
                     <span className="inline-flex items-center gap-1 text-accent-ink">
@@ -181,6 +207,7 @@ export function DraftCard({
 
                 {/* Body: directly editable */}
                 <Textarea
+                    ref={bodyRef}
                     rows={5}
                     value={text}
                     onChange={(e) => {
@@ -305,14 +332,38 @@ export function DraftCard({
                         </Button>
                         <Button
                             size="sm"
-                            onClick={clickSend}
+                            onClick={clickCopy}
                             disabled={pending || !text.trim()}
                             className="gap-1.5"
                         >
-                            <Send className="h-3.5 w-3.5" aria-hidden />
-                            Send
+                            {clipboard.copied ? (
+                                <Check className="h-3.5 w-3.5" aria-hidden />
+                            ) : (
+                                <Copy className="h-3.5 w-3.5" aria-hidden />
+                            )}
+                            {clipboard.copied ? "Copied" : "Copy reply"}
                         </Button>
                     </div>
+                </div>
+
+                {/* Always-mounted polite region (a display:none live
+                    region is not announced); the styled line renders
+                    only when there is something true to say. */}
+                <div aria-live="polite">
+                    {(clipboard.copied || clipboard.failed) && (
+                        <p
+                            className={cn(
+                                "border-t border-border px-3 py-1.5 text-xs",
+                                clipboard.failed
+                                    ? "text-risk-md"
+                                    : "text-risk-lo",
+                            )}
+                        >
+                            {clipboard.failed
+                                ? "Couldn't copy automatically — the text is selected, press Ctrl+C."
+                                : `Copied. Paste it to ${toName} in Hope Move.`}
+                        </p>
+                    )}
                 </div>
             </div>
 
@@ -382,7 +433,8 @@ export function DraftCard({
                                 : "not available"}
                         </div>
                         <p className="mt-1.5 italic">
-                            Drafts are suggestions. Always review before sending.
+                            Drafts are suggestions. Review before you paste
+                            into Hope Move.
                         </p>
                     </div>
                 </details>

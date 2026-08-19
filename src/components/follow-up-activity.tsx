@@ -28,7 +28,12 @@ function memoryEntryToActivity(m: MemoryEntry): ActivityEntry | null {
         id: String(m.memory_id ?? `${m.ts ?? ""}-${m.activity_id ?? ""}`),
         ts: m.ts ?? "",
         kind: "message",
-        title: m.activity_type ? `Sent · ${m.activity_type}` : "Sent reply",
+        // "Logged", not "Sent" — these are the drafts a facilitator
+        // copied to paste into Hope Move; this panel cannot know whether
+        // the paste happened.
+        title: m.activity_type
+            ? `Reply logged · ${m.activity_type}`
+            : "Reply logged",
         sub: m.text ?? "",
     };
 }

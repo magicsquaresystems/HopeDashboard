@@ -3,18 +3,27 @@
  * them in a Node environment without dragging in the React/Next tree.
  *
  * These functions exist here exactly so the failure surfaces they own
- * (error classification, model labelling) get unit-tested directly
- * rather than being verified only by Playwright walking the UI.
+ * (error classification, model labelling, reply-target picking) get
+ * unit-tested directly rather than being verified only by Playwright
+ * walking the UI.
  */
+
+import { DAY_MS, scoreWindowEnd } from "@/lib/signals";
+import type { ParticipantHistory } from "@/lib/api/dropout";
+import type { ActivityType } from "@/lib/api/commentGen";
 
 /**
  * Shape of the error card rendered when /generate fails. The tone drives
- * the colour token and copy; title/body are user-facing strings.
+ * the colour token and copy; title/body are user-facing strings. `detail`
+ * carries the raw technical message for a collapsed disclosure — never
+ * for the card body, where it reads as the interface shouting stack
+ * traces at a facilitator.
  */
 export type GenerateErrorState = {
     tone: "offline" | "auth" | "error" | "busy";
     title: string;
     body: string;
+    detail?: string;
 };
 
 /** Substring the service puts in its 503 body when the decode queue is
@@ -132,14 +141,113 @@ export function classifyGenerateError(message: string): GenerateErrorState {
     ) {
         return {
             tone: "offline",
-            title: "Comment generation is offline",
-            body: "The fine-tuned reply model isn't reachable right now. Risk scoring and activity views still work — try again once the Space is back.",
+            title: "AI drafts aren't available right now",
+            body: "The reply assistant isn't reachable at the moment. Risk scores and activity still work, and you can write your own reply — try again in a few minutes.",
+            detail: message,
         };
     }
     return {
         tone: "error",
         title: "Couldn't generate drafts",
-        body: message,
+        body: "Something unexpected stopped the drafts. Try again — if it keeps happening, let the programme team know.",
+        detail: message,
+    };
+}
+
+/**
+ * What the drafts panel replies to: the participant's newest draftable
+ * activity, or the specific post the facilitator clicked in the
+ * timeline.
+ *
+ * Extracted from the panel both for testability and because two
+ * honesty bugs lived in the inline version:
+ *
+ * - An explicit timeline click skipped the Emotions filter that the
+ *   auto-pick applies, so a facilitator could target an event the
+ *   reply model rejects (no training pairs) — and, once publishing is
+ *   live, one that maps to no platform activity type at all.
+ * - A missing `activity_type` was silently presented as "GoalSetting".
+ *   As a wire default for /generate that is harmless (the service
+ *   requires the enum); shown on screen — and later, filed on the
+ *   platform — it is a fabricated claim about what the participant
+ *   did. `typeKnown` lets the UI say "Activity" instead.
+ */
+export type ReplyTarget = {
+    text: string;
+    /** Wire value for /generate — defaulted when unknown. */
+    activityType: ActivityType;
+    /** False when the event carried no activity_type; render a generic
+     *  label rather than the defaulted wire value. */
+    typeKnown: boolean;
+    daysAgo: number;
+    isDiscussion: boolean;
+    topicId?: number;
+    /** Platform activity id — forwarded on /generate so the service's
+     *  memory store can dedupe repeated generations against the same
+     *  post. Absent for forum posts and pre-linkage bundles. */
+    activityId?: number;
+};
+
+export function pickReplyTarget(
+    history: ParticipantHistory,
+    selectedPostTs: string | null,
+): ReplyTarget | null {
+    const draftable = (e: ParticipantHistory["events"][number]) =>
+        typeof e.description === "string" &&
+        e.description.trim().length > 0 &&
+        // Emotions removed 2026-05-27 — comment-gen rejects it (no
+        // training pairs), and it maps to no platform activity type.
+        // Applies to explicit picks too; the timeline still shows
+        // Emotions events, they just aren't draftable.
+        e.activity_type !== "Emotions";
+
+    // Default auto-pick is the newest draftable ACTIVITY (the primary
+    // flow). Discussion/forum posts are never auto-picked — a
+    // facilitator opts into replying to one by clicking it in the
+    // timeline (sets selectedPostTs).
+    const acts = history.events
+        .filter((e) => e.event_type === "activity" && draftable(e))
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+    const picked = selectedPostTs
+        ? history.events.find(
+              (e) =>
+                  e.timestamp === selectedPostTs &&
+                  (e.event_type === "activity" ||
+                      e.event_type === "discussion_post") &&
+                  draftable(e),
+          )
+        : undefined;
+
+    const latest = picked ?? acts[0];
+    if (!latest) return null;
+
+    // Age is measured against the end of the scoring window, not the
+    // wall clock — the same reference every other signal on the page
+    // uses. Anchoring to Date.now() made the panel claim a post was
+    // "137d ago" while the detail panel, correctly, called the same
+    // participant active that week.
+    const ageMs =
+        scoreWindowEnd(history) - new Date(latest.timestamp).getTime();
+    const daysAgo = Math.max(0, Math.floor(ageMs / DAY_MS));
+    const isDiscussion = latest.event_type === "discussion_post";
+    const typeKnown = isDiscussion || latest.activity_type != null;
+    // Forum posts are typed "Discussion" (server-side enum); cast
+    // through unknown because the dashboard ActivityType union stays
+    // narrow (GoalSetting/Gratitude/MyHOPE) by design.
+    const activityType: ActivityType = isDiscussion
+        ? ("Discussion" as unknown as ActivityType)
+        : ((latest.activity_type as ActivityType | undefined) ??
+          "GoalSetting");
+
+    return {
+        text: (latest.description ?? "").trim(),
+        activityType,
+        typeKnown,
+        daysAgo,
+        isDiscussion,
+        topicId: latest.topic_id,
+        activityId: latest.activity_id,
     };
 }
 

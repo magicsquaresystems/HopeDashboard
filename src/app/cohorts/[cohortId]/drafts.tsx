@@ -37,7 +37,7 @@ import {
 } from "@/lib/store/scoringStore";
 import { useSessionStatsStore } from "@/lib/store/sessionStatsStore";
 import { useUiStore } from "@/lib/store/uiStore";
-import { DAY_MS, daysSinceLastEvent, scoreWindowEnd } from "@/lib/signals";
+import { daysSinceLastEvent } from "@/lib/signals";
 import type { CohortMeta } from "@/lib/cohorts";
 import type {
     ActivityType,
@@ -64,6 +64,7 @@ import {
     classifyGenerateError,
     firstContactTemplate,
     formatModelLabel,
+    pickReplyTarget,
 } from "./drafts-helpers";
 
 export function Drafts({ cohort }: { cohort: CohortMeta }) {
@@ -96,68 +97,14 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
     // with a non-empty description. Facilitators never paste; the
     // platform (or bundle stand-in) is the source.
     const selectedPostTs = useUiStore((s) => s.selectedPostTs);
-    const recentPost = useMemo(() => {
-        if (!history) return null;
-        // Default auto-pick is the newest draftable ACTIVITY (the
-        // primary flow). Discussion/forum posts are never auto-picked —
-        // a facilitator opts into replying to one by clicking it in the
-        // timeline (sets selectedPostTs).
-        const acts = history.events
-            .filter(
-                (e) =>
-                    e.event_type === "activity" &&
-                    typeof e.description === "string" &&
-                    e.description.trim().length > 0 &&
-                    // Emotions removed 2026-05-27 — comment-gen rejects
-                    // it (no training pairs). Skip so the auto-load picks
-                    // the next-newest drafttable activity. The timeline
-                    // still shows Emotions events; they just aren't AI-
-                    // drafted. See RETRAIN.md §1.2.
-                    e.activity_type !== "Emotions",
-            )
-            .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-        // An explicit timeline pick may be an activity OR a forum post.
-        const picked = selectedPostTs
-            ? history.events.find(
-                  (e) =>
-                      e.timestamp === selectedPostTs &&
-                      (e.event_type === "activity" ||
-                          e.event_type === "discussion_post") &&
-                      (e.description ?? "").trim().length > 0,
-              )
-            : undefined;
-        const latest = picked ?? acts[0];
-        if (!latest) return null;
-        // Age is measured against the end of the scoring window, not the
-        // wall clock — the same reference every other signal on the page
-        // uses. Anchoring to Date.now() made the panel claim a post was
-        // "137d ago" while the detail panel, correctly, called the same
-        // participant active that week. Under a live feed the two are
-        // within a day of each other anyway.
-        const ageMs = scoreWindowEnd(history) - new Date(latest.timestamp).getTime();
-        const daysAgo = Math.max(0, Math.floor(ageMs / DAY_MS));
-        const isDiscussion = latest.event_type === "discussion_post";
-        // Forum posts are typed "Discussion" (server-side enum); cast
-        // through unknown because the dashboard ActivityType union stays
-        // narrow (GoalSetting/Gratitude/MyHOPE) by design.
-        const at: ActivityType = isDiscussion
-            ? ("Discussion" as unknown as ActivityType)
-            : ((latest.activity_type as ActivityType | undefined) ??
-              "GoalSetting");
-        return {
-            text: (latest.description ?? "").trim(),
-            activityType: at,
-            daysAgo,
-            isDiscussion,
-            topicId: latest.topic_id,
-            // Platform activity id — forwarded on /generate so the
-            // service's memory store can dedupe repeated generations
-            // against the same post (memory_store.py keys
-            // participant_post rows on it). Absent for forum posts and
-            // pre-linkage bundles.
-            activityId: latest.activity_id,
-        };
-    }, [history, selectedPostTs]);
+    // Target-picking lives in drafts-helpers (pure, unit-tested). It
+    // owns the Emotions filter — for explicit timeline picks too — and
+    // the `typeKnown` flag that keeps a defaulted activity type off the
+    // screen.
+    const recentPost = useMemo(
+        () => (history ? pickReplyTarget(history, selectedPostTs) : null),
+        [history, selectedPostTs],
+    );
 
     // Drafts column reads its inputs directly from the most recent
     // platform post — no facilitator pasting. activityType comes from
@@ -194,7 +141,7 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
                 <CardContent>
                     <EmptyState
                         title="Drafts appear here"
-                        description="Once you select a participant, paste their post and generate three persona drafts."
+                        description="Pick a participant to see their latest post and get suggested replies you can copy into Hope Move."
                     />
                 </CardContent>
             </Card>
@@ -254,36 +201,45 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
         thumb.mutate({ draft_id: draftId, label });
     }
 
-    function onSend(
+    // Fires when a draft has actually been copied to the clipboard —
+    // DraftCard guarantees the copy succeeded first, so "contacted"
+    // means "has the reply in hand to paste", never "clicked a button
+    // that failed".
+    function onUse(
         draftId: string,
         sentText: string,
         action: "accept" | "edit",
     ) {
-        if (!response) return;
         const participantId = selectedId;
-        event.mutate(
-            {
+        // Mark the participant as contacted so colleagues on this
+        // cohort see it and don't message them again, and record the
+        // contact for the topbar's session stat. Fired here rather than
+        // inside `useEvent` because EventRequest carries neither
+        // participant nor cohort id — only this component knows who the
+        // reply is for. Unconditional on `response`: a hand-written
+        // "write my own" reply is a contact too, and the old
+        // early-return silently dropped it.
+        const markContacted = () => {
+            if (!participantId) return;
+            queueOp.mutate({ op: "contacted", participantId, action });
+            useSessionStatsStore
+                .getState()
+                .recordContact(cohort.id, participantId);
+        };
+        // The HITL research record needs a real draft_set_id — a
+        // hand-written reply has none, and inventing one would corrupt
+        // the research data. Contact marking must not depend on the
+        // research write landing, so it runs regardless of the event
+        // call's outcome once the copy has genuinely happened.
+        if (response) {
+            event.mutate({
                 draft_set_id: response.draft_set_id,
                 chosen_draft_id: draftId,
                 action,
                 sent_text: sentText,
-            },
-            {
-                // Mark the participant as contacted so colleagues on this
-                // cohort see it and don't message them again, and record
-                // the contact for the topbar's session stat. Both fired
-                // here rather than inside `useEvent` because EventRequest
-                // carries neither participant nor cohort id — only this
-                // component knows who the reply went to.
-                onSuccess: () => {
-                    if (!participantId) return;
-                    queueOp.mutate({ op: "contacted", participantId, action });
-                    useSessionStatsStore
-                        .getState()
-                        .recordContact(cohort.id, participantId);
-                },
-            },
-        );
+            });
+        }
+        markContacted();
     }
 
     const profile = getProfile(selectedId, bundle.data ?? null);
@@ -345,7 +301,12 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
                             <div className="rounded-md border border-border bg-surface-2 px-3 py-2.5">
                                 <div className="mb-1.5 flex items-center gap-1.5">
                                     <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-medium text-accent-ink">
-                                        {recentPost.activityType}
+                                        {/* Never show the defaulted wire
+                                            value as if the platform said
+                                            it — see pickReplyTarget. */}
+                                        {recentPost.typeKnown
+                                            ? recentPost.activityType
+                                            : "Activity"}
                                     </span>
                                 </div>
                                 <p className="whitespace-pre-wrap text-sm leading-relaxed text-text">
@@ -461,6 +422,16 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
                         >
                             <div className="font-medium">{state.title}</div>
                             <p className="mt-1 leading-relaxed">{state.body}</p>
+                            {state.detail && (
+                                <details className="mt-1.5 opacity-80">
+                                    <summary className="cursor-pointer select-none">
+                                        Technical details
+                                    </summary>
+                                    <p className="mt-1 break-all font-mono text-[10px] leading-relaxed">
+                                        {state.detail}
+                                    </p>
+                                </details>
+                            )}
                         </div>
                     );
                 })()}
@@ -534,7 +505,7 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
                                 onThumb={() => {
                                     /* no AI to rate */
                                 }}
-                                onSend={onSend}
+                                onUse={onUse}
                                 pending={event.isPending}
                                 context={ctx}
                                 recipientName={displayName}
@@ -611,7 +582,7 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
                                 key={String(current.draft_id)}
                                 draft={current}
                                 onThumb={onThumb}
-                                onSend={onSend}
+                                onUse={onUse}
                                 onRegenerate={onGenerate}
                                 regenerating={generate.isPending}
                                 pending={event.isPending}

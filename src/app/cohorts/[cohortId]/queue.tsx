@@ -42,6 +42,7 @@ import { useQueueLayoutStore } from "@/lib/store/queueLayoutStore";
 import { isAnchoredWeek, useScoringStore } from "@/lib/store/scoringStore";
 import { useUiStore } from "@/lib/store/uiStore";
 import { useQueueOp, useQueueState } from "@/lib/hooks/useQueueState";
+import { friendlyLoadError } from "@/lib/load-error";
 import { agoLabel, shortActor } from "@/lib/queue-state-shared";
 import { QUEUE_PILL_LABELS } from "@/lib/risk";
 import { lastActiveLabel } from "@/lib/signals";
@@ -74,7 +75,7 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
     // same instance the topbar reads, so the two can never disagree on
     // what was scored. The hook also withholds scoring entirely while
     // the cohort is under a week old (`notStarted`).
-    const { batch, histories, notStarted } = useCohortScoring(cohort.id);
+    const { batch, bundle, histories, notStarted } = useCohortScoring(cohort.id);
 
     const histLookup = useMemo(() => {
         const m = new Map<string, ParticipantHistory>();
@@ -246,10 +247,26 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                         ))}
                     </div>
                 )}
-                {error && (
-                    <p className="text-xs text-risk-hi">
-                        Failed to load: {String((error as Error).message)}
-                    </p>
+                {/* Failure and absence are different facts and must not
+                    share the "No participants match" line — a facilitator
+                    reading an outage as an over-filtered list widens their
+                    search instead of retrying. Precedence: bundle failed →
+                    scores failed → cohort has no data → genuinely no
+                    matches. Raw messages live in a collapsed disclosure
+                    for whoever operates the deployment. */}
+                {bundle.isError && (
+                    <LoadErrorNotice
+                        title="We couldn't load this cohort's data"
+                        body="Participant activity didn't load, so there is nothing to score yet. Try again in a moment."
+                        detail={String((bundle.error as Error)?.message ?? "")}
+                        onRetry={() => bundle.refetch()}
+                    />
+                )}
+                {error && !bundle.isError && (
+                    <LoadErrorNotice
+                        {...friendlyLoadError(String((error as Error).message))}
+                        onRetry={() => batch.refetch()}
+                    />
                 )}
                 {notStarted && !isLoading && !error && (
                     <p className="px-1 py-4 text-center text-xs text-muted">
@@ -258,11 +275,26 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                         needs a full week of behaviour to read.
                     </p>
                 )}
-                {!notStarted && visible.length === 0 && !isLoading && !error && (
-                    <p className="px-1 py-4 text-center text-xs text-muted">
-                        No participants match the current filter.
-                    </p>
-                )}
+                {bundle.data === null &&
+                    !bundle.isError &&
+                    !bundle.isLoading &&
+                    !notStarted && (
+                        <p className="px-1 py-4 text-center text-xs text-muted">
+                            This cohort isn&apos;t connected yet — there&apos;s
+                            no activity data for it here. If that seems wrong,
+                            tell the programme team.
+                        </p>
+                    )}
+                {!notStarted &&
+                    visible.length === 0 &&
+                    !isLoading &&
+                    !error &&
+                    !bundle.isError &&
+                    bundle.data != null && (
+                        <p className="px-1 py-4 text-center text-xs text-muted">
+                            No participants match the current filter.
+                        </p>
+                    )}
                 {pageItems.map((p) => {
                     const hist = histLookup.get(p.participant_id);
                     if (!hist) return null;
@@ -283,8 +315,11 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                             selected={selectedId === p.participant_id}
                             onClick={() => select(p.participant_id)}
                             contactedNote={
+                                // "Contacted", not "Replied" — the copy
+                                // flow proves the reply was taken to
+                                // paste, not that it was posted.
                                 contact
-                                    ? `Replied by ${shortActor(contact.by)} · ${agoLabel(contact.at, now)}`
+                                    ? `Contacted by ${shortActor(contact.by)} · ${agoLabel(contact.at, now)}`
                                     : undefined
                             }
                         />
@@ -404,6 +439,54 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                 )}
             </CardContent>
         </Card>
+    );
+}
+
+/**
+ * Calm failure card for the queue: plain words, a retry that targets the
+ * failed query, and the raw message behind a disclosure — visible enough
+ * for whoever operates the deployment, invisible until asked-for to the
+ * facilitator working the list.
+ */
+function LoadErrorNotice({
+    title,
+    body,
+    detail,
+    onRetry,
+}: {
+    title: string;
+    body: string;
+    detail?: string;
+    onRetry: () => void;
+}) {
+    return (
+        <div
+            role="status"
+            className="space-y-2 rounded-md border border-risk-md bg-risk-md-bg px-3 py-2.5 text-xs"
+        >
+            <div>
+                <p className="font-medium text-risk-md">{title}</p>
+                <p className="mt-1 leading-relaxed text-text-2">{body}</p>
+            </div>
+            <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={onRetry}
+            >
+                Try again
+            </Button>
+            {detail ? (
+                <details className="text-muted">
+                    <summary className="cursor-pointer select-none">
+                        Technical details
+                    </summary>
+                    <p className="mt-1 break-all font-mono text-[10px] leading-relaxed">
+                        {detail}
+                    </p>
+                </details>
+            ) : null}
+        </div>
     );
 }
 
