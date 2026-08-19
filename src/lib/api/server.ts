@@ -13,10 +13,24 @@ import { signerOrUndefined } from "@/lib/auth/sign";
 import { createCommentGenClient } from "@/lib/api/commentGen";
 import { createDropoutClient } from "@/lib/api/dropout";
 
+/**
+ * The hosted Spaces are the default, not localhost.
+ *
+ * Both URLs are public identifiers rather than secrets, and this app is
+ * built for one deployment, so defaulting to the services it actually
+ * uses means a deployment only has to be given the three credentials
+ * that genuinely cannot live in the repo. The previous localhost
+ * defaults meant an unset variable pointed production at a machine that
+ * does not exist, which surfaces as an unreachable backend rather than
+ * as the missing configuration it is.
+ *
+ * Anyone running the backends locally sets these in `.env.local`.
+ */
 const COMMENT_GEN_URL =
-    process.env.COMMENT_GEN_URL ?? "http://localhost:8001";
+    process.env.COMMENT_GEN_URL ??
+    "https://h4cdev-hope-comment-gen-api.hf.space";
 const DROPOUT_API_URL =
-    process.env.DROPOUT_API_URL ?? "http://localhost:8000";
+    process.env.DROPOUT_API_URL ?? "https://h4cdev-hope-dropout-api.hf.space";
 
 /**
  * `HF_TOKEN` is required to invoke private HF Spaces. Empty in pure-local

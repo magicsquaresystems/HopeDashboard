@@ -376,9 +376,9 @@ export function DraftCard({
                     <div className="mt-2 space-y-1.5 rounded-md border border-border bg-surface-2 p-2.5 leading-relaxed">
                         <div>
                             <span className="font-medium text-text-2">
-                                Persona:
+                                Tone:
                             </span>{" "}
-                            {draft.persona} — {draft.label}
+                            {draft.label}
                         </div>
                         {context.topFactors.length > 0 && (
                             <div>
@@ -402,11 +402,11 @@ export function DraftCard({
                         )}
                         <div>
                             <span className="font-medium text-text-2">
-                                Memory hit:
+                                Past posts:
                             </span>{" "}
                             {context.memoryUsed
-                                ? "yes — prior posts retrieved"
-                                : "no — cold-start"}
+                                ? "used, so the draft refers back to what they wrote before"
+                                : "none used, this is a first draft for them"}
                         </div>
                         {context.memoryUsed &&
                             context.memorySnippets &&
@@ -426,10 +426,10 @@ export function DraftCard({
                             )}
                         <div>
                             <span className="font-medium text-text-2">
-                                Engagement context:
+                                Activity signals:
                             </span>{" "}
                             {context.engagementUsed
-                                ? "applied"
+                                ? "used"
                                 : "not available"}
                         </div>
                         <p className="mt-1.5 italic">

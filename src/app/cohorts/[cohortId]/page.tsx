@@ -53,7 +53,9 @@ export default async function CohortDashboard({
             </div>
             <CohortGrid
                 queue={<Queue cohort={cohort} />}
-                detail={<Detail cohortId={cohort.id} />}
+                detail={
+                    <Detail cohortId={cohort.id} cohortCode={cohort.code} />
+                }
                 drafts={<Drafts cohort={cohort} />}
             />
         </main>

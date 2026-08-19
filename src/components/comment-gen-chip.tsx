@@ -3,7 +3,6 @@
 import { Sparkles } from "lucide-react";
 
 import { useCommentGenStatus } from "@/lib/hooks/api";
-import { formatModelLabel } from "@/app/cohorts/[cohortId]/drafts-helpers";
 
 /**
  * Read-only chip naming the reply model, mirroring `RiskModelChip` for
@@ -33,16 +32,12 @@ export function CommentGenChip() {
     const status = useCommentGenStatus();
     if (!status.data) return null;
 
-    const label = formatModelLabel(status.data.model_version);
     const loaded = status.data.model_loaded;
 
-    const tooltip =
-        `Reply drafts are written by ${status.data.model_version}. ` +
-        (loaded === false
-            ? "The model is not loaded yet — the first draft pays roughly a minute of load on top, and will not complete at all if the service lacks the memory to host it."
-            : loaded === true
-              ? "Model is loaded and warm."
-              : "");
+    // The face states what a facilitator needs to decide whether to
+    // wait; the model id stays available for whoever is checking which
+    // adapter a deployment is serving, but it is not the headline.
+    const tooltip = `Reply drafts are written by ${status.data.model_version}.`;
 
     return (
         <span
@@ -50,11 +45,12 @@ export function CommentGenChip() {
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-1 text-xs text-text-2"
         >
             <Sparkles className="h-3.5 w-3.5 text-muted" aria-hidden />
-            <span className="font-medium">{label}</span>
-            {loaded === false && (
-                <span className="text-risk-md" title={tooltip}>
-                    · not loaded
+            {loaded === false ? (
+                <span className="text-risk-md">
+                    AI drafts warming up, the first one takes about a minute
                 </span>
+            ) : (
+                <span className="font-medium">AI drafts ready</span>
             )}
         </span>
     );

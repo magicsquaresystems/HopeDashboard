@@ -44,31 +44,40 @@ export function RiskModelChip() {
     ]);
 
     const family = friendlyFamily(info.data.winner_architecture);
-    const tooltip =
-        `${family} per-horizon model from engagement_ml deploy bundle ` +
-        `(${info.data.n_train.toLocaleString()} train / ${info.data.n_test.toLocaleString()} test). ` +
-        `Current horizon: T${horizon.T}. ` +
-        (auc !== null ? `AUC ${auc.toFixed(3)}. ` : "") +
-        (brier !== null ? `Brier ${brier.toFixed(3)}. ` : "");
 
+    // A facilitator triaging a cohort does not need "LightGBM · T42 ·
+    // AUC 0.90" in their eyeline; they need to know the ordering comes
+    // from a real, evaluated model and where to look if they want the
+    // numbers. So the face says the plain thing and the numbers live one
+    // click away, in the same disclosure rather than a hover tooltip
+    // (which keyboard and touch users never get).
     return (
-        <span
-            title={tooltip}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-1 text-xs text-text-2"
-        >
-            <Sigma className="h-3.5 w-3.5 text-muted" aria-hidden />
-            <span className="font-medium">{family}</span>
-            <span className="text-muted">·</span>
-            <span className="font-mono text-[11px] text-muted">T{horizon.T}</span>
-            {auc !== null && (
-                <>
-                    <span className="text-muted">·</span>
-                    <span className="font-mono text-[11px] text-muted">
-                        AUC {auc.toFixed(2)}
-                    </span>
-                </>
-            )}
-        </span>
+        <details className="group inline-block align-middle text-xs">
+            <summary className="inline-flex cursor-pointer select-none items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-1 text-text-2 hover:text-text">
+                <Sigma className="h-3.5 w-3.5 text-muted" aria-hidden />
+                How these scores work
+            </summary>
+            <div className="mt-1.5 max-w-md space-y-1.5 rounded-md border border-border bg-surface-2 p-2.5 leading-relaxed text-text-2">
+                <p>
+                    The follow-up list is ordered by a statistical model
+                    trained on past Hope programmes. It reads each person&apos;s
+                    sign-ins, posts and page reads up to the selected week.
+                </p>
+                <p>
+                    Flags are set cautiously. They catch around 9 in 10 people
+                    who later step away, so a flag means &ldquo;worth a
+                    look&rdquo;, not &ldquo;will drop out&rdquo;.
+                </p>
+                <p className="font-mono text-[10px] text-muted">
+                    {family} · week {Math.round(horizon.T / 7)} model (T
+                    {horizon.T}) ·{" "}
+                    {info.data.n_train.toLocaleString()} train /{" "}
+                    {info.data.n_test.toLocaleString()} test
+                    {auc !== null ? ` · AUC ${auc.toFixed(3)}` : ""}
+                    {brier !== null ? ` · Brier ${brier.toFixed(3)}` : ""}
+                </p>
+            </div>
+        </details>
     );
 }
 

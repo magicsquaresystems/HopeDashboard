@@ -67,8 +67,12 @@ import { useBundleDisplayName } from "@/lib/hooks/displayName";
 
 export function Detail({
     cohortId,
+    cohortCode,
 }: {
     cohortId: number;
+    /** Programme code shown under the participant's name, in place of
+     *  the platform's internal ids. */
+    cohortCode: string;
 }) {
     const selectedId = useUiStore((s) => s.selectedParticipantId);
     const select = useUiStore((s) => s.selectParticipant);
@@ -203,11 +207,15 @@ export function Detail({
                         />
                         <div>
                             <CardTitle>{name}</CardTitle>
+                            {/* The platform's internal participant id and
+                                the numeric cohort id used to sit here.
+                                Neither means anything to a facilitator,
+                                and an id on screen is one more identifier
+                                to leak in a screen-share of a health
+                                programme. The alias identifies the person;
+                                the cohort code names the programme. */}
                             <p className="text-xs text-muted">
-                                Cohort {cohortId} ·{" "}
-                                <span className="text-text-2">
-                                    {selectedId}
-                                </span>
+                                {cohortCode}
                             </p>
                         </div>
                     </div>
@@ -225,7 +233,7 @@ export function Detail({
                                     className="h-3 w-3 animate-spin"
                                     aria-hidden
                                 />
-                                Re-scoring…
+                                Updating score…
                             </span>
                         ) : status ? (
                             <Badge
