@@ -119,7 +119,7 @@ export function classifyGenerateError(message: string): GenerateErrorState {
         return {
             tone: "busy",
             title: "Another draft is generating",
-            body: "The reply model handles one request at a time, and a colleague's draft is ahead of yours. This usually clears within a minute — try again shortly.",
+            body: "The reply model handles one request at a time, and a colleague's draft is ahead of yours. It usually clears within a minute.",
         };
     }
     if (
@@ -142,14 +142,14 @@ export function classifyGenerateError(message: string): GenerateErrorState {
         return {
             tone: "offline",
             title: "AI drafts aren't available right now",
-            body: "The reply assistant isn't reachable at the moment. Risk scores and activity still work, and you can write your own reply — try again in a few minutes.",
+            body: "The reply assistant isn't reachable at the moment. Risk scores and activity still work, and you can write your own reply. Try again in a few minutes.",
             detail: message,
         };
     }
     return {
         tone: "error",
         title: "Couldn't generate drafts",
-        body: "Something unexpected stopped the drafts. Try again — if it keeps happening, let the programme team know.",
+        body: "Something unexpected stopped the drafts. Try again. If it keeps happening, let the programme team know.",
         detail: message,
     };
 }
@@ -268,7 +268,7 @@ export function firstContactTemplate(firstName: string | null): string {
     const name = (firstName ?? "").trim() || "there";
     return (
         `Hi ${name}, I noticed it's been a little while since your last visit ` +
-        `to Hope, and I wanted to check in — no pressure at all. How have ` +
+        `to Hope, and I wanted to check in. No pressure at all. How have ` +
         `things been? If anything's making it harder to get back to the ` +
         `programme, I'm happy to help in whatever way works for you.`
     );

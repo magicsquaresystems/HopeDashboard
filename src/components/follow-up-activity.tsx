@@ -116,7 +116,7 @@ export function FollowUpActivity({
                                 role="status"
                                 className="px-4 pb-3 text-center text-xs text-risk-hi"
                             >
-                                Couldn&apos;t load sent history — showing local
+                                Couldn&apos;t load sent history. Showing local
                                 notes only.
                             </p>
                         )}

@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { LogOut } from "lucide-react";
 
+import { HopeMoveLink } from "@/components/hope-move-link";
 import { useCohortScoring } from "@/lib/hooks/useCohortScoring";
 import { useQueueState } from "@/lib/hooks/useQueueState";
 import { useSessionStatsStore } from "@/lib/store/sessionStatsStore";
@@ -55,25 +56,37 @@ export function Topbar({ cohort }: TopbarProps) {
     const needsFollowUp = high + medium;
 
     return (
-        <header className="flex flex-col gap-3 border-b border-border bg-surface px-4 py-3 sm:px-5 lg:flex-row lg:flex-wrap lg:items-center lg:gap-4">
+        <header className="border-b border-border bg-surface">
+            {/* The platform's gradient as a hairline, not a header band:
+                the one persistent brand echo on the working screen. */}
+            <div
+                aria-hidden
+                className="h-0.5 bg-linear-to-r from-brand-a to-brand-b"
+            />
+            <div className="flex flex-col gap-3 px-4 py-3 sm:px-5 lg:flex-row lg:flex-wrap lg:items-center lg:gap-4">
             <div className="flex flex-wrap items-center gap-3">
                 <Link
                     href="/cohorts"
                     className="flex shrink-0 items-center gap-2.5"
-                    aria-label="hope·move home"
+                    aria-label="Participant Insights Hub, back to your cohorts"
                 >
-                    <span className="grid h-6 w-6 place-items-center rounded-md bg-text text-[11px] font-bold text-surface">
-                        h·
+                    <span className="grid h-6 w-6 place-items-center rounded-md bg-linear-to-br from-brand-a to-brand-b text-[11px] font-bold text-white">
+                        ih
                     </span>
                     <span className="font-semibold tracking-tight text-text">
-                        hope·move
+                        Insights Hub
                     </span>
                 </Link>
                 <nav
                     aria-label="breadcrumb"
                     className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-muted"
                 >
-                    <span className="hidden sm:inline">Participant support</span>
+                    <Link
+                        href="/cohorts"
+                        className="hidden transition-colors hover:text-text sm:inline"
+                    >
+                        Cohorts
+                    </Link>
                     <span
                         className="hidden opacity-40 sm:inline"
                         aria-hidden
@@ -98,6 +111,12 @@ export function Topbar({ cohort }: TopbarProps) {
                 />
                 {/* Session counter is local state — never in flight. */}
                 <StatPill value={sentThisSession} label="contacted this session" />
+                {/* Small and off to the side on purpose: it orients
+                    without inviting a mid-draft exit. */}
+                <HopeMoveLink
+                    label="Hope Move"
+                    className="text-xs"
+                />
                 {who && (
                     <div className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1.5">
                         <span
@@ -117,6 +136,7 @@ export function Topbar({ cohort }: TopbarProps) {
                         </button>
                     </div>
                 )}
+            </div>
             </div>
         </header>
     );

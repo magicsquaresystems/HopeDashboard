@@ -164,7 +164,7 @@ export function ParticipantProfile({
                     <span
                         className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-1 text-xs"
                         title={
-                            "Short Warwick-Edinburgh Mental Well-being Scale — self-reported, range 7–35. " +
+                            "Short Warwick-Edinburgh Mental Well-being Scale. Self-reported, range 7 to 35. " +
                             wellbeing
                                 .map(
                                     (w) =>

@@ -326,10 +326,9 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
                             hasn&apos;t posted yet
                         </p>
                         <p className="mt-1 text-xs text-muted">
-                            No activity in the current scoring window. For an
-                            at-risk participant, a warm first check-in is the
-                            highest-value early action — it&apos;s a
-                            dropout-lowering signal in the model.
+                            No activity in the current scoring window. A warm
+                            first check-in is often the most helpful early
+                            step for someone who has gone quiet.
                         </p>
                         {!writeMode && (
                             <Button

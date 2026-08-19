@@ -360,7 +360,7 @@ export function DraftCard({
                             )}
                         >
                             {clipboard.failed
-                                ? "Couldn't copy automatically — the text is selected, press Ctrl+C."
+                                ? "Couldn't copy automatically. The text is selected, press Ctrl+C."
                                 : `Copied. Paste it to ${toName} in Hope Move.`}
                         </p>
                     )}

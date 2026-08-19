@@ -1,8 +1,8 @@
-import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
 import { CohortList } from "@/components/cohort-list";
+import { HopeMoveLink } from "@/components/hope-move-link";
 import { visibleCohorts } from "@/lib/server/assignments";
 
 /**
@@ -16,23 +16,14 @@ export default async function CohortsIndexPage() {
     if (!email) redirect("/login");
 
     const cohorts = await visibleCohorts(email);
-    // The way back out. It lives here rather than on the cohort page
-    // because this is the assistant's front door — the natural place to
-    // step back to where you came from, and one level away from the
-    // work itself, so nobody leaves mid-draft by aiming for it.
-    const hopeMoveUrl = process.env.NEXT_PUBLIC_HOPE_MOVE_URL;
 
     return (
         <main className="mx-auto w-full max-w-5xl px-6 py-10">
-            {hopeMoveUrl && (
-                <a
-                    href={hopeMoveUrl}
-                    className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-text"
-                >
-                    <ArrowLeft className="h-4 w-4" aria-hidden />
-                    Back to Hope Move
-                </a>
-            )}
+            {/* The way back out, on the front door where it belongs —
+                one level away from the work itself, so nobody leaves
+                mid-draft by aiming for it. The topbar carries a quieter
+                copy on the cohort page. */}
+            <HopeMoveLink className="mb-6" />
             <header className="mb-8 flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-semibold text-text">

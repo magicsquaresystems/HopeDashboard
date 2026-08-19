@@ -382,7 +382,7 @@ function ExpandedEventRow({
                         {isEmotions && (
                             <span
                                 className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-muted"
-                                title="Emotions posts are not AI-drafted — they call for a human reflection."
+                                title="Emotions posts are not AI-drafted. They call for a human reply."
                             >
                                 no AI draft
                             </span>
@@ -565,7 +565,7 @@ export function ActivityTimeline({
                                 {isEmotions && (
                                     <span
                                         className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-muted"
-                                        title="Emotions posts are not AI-drafted — they call for a human reflection."
+                                        title="Emotions posts are not AI-drafted. They call for a human reply."
                                     >
                                         no AI draft
                                     </span>
@@ -628,7 +628,7 @@ export function ActivityTimeline({
                     ))}
                     {omitted > 0 && (
                         <li className="pt-1 text-xs text-muted">
-                            Showing the {MAX_EXPANDED} most recent events —{" "}
+                            Showing the {MAX_EXPANDED} most recent events.{" "}
                             {omitted} earlier{" "}
                             {omitted === 1 ? "event" : "events"} not shown.
                         </li>

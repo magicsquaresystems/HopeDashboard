@@ -25,6 +25,13 @@
   --risk-lo:    oklch(52% 0.12 155);
   --risk-lo-bg: oklch(96% 0.04 155);
 
+  /* Hope Move brand gradient — the platform's magenta→purple header.
+   * Used sparingly (topbar hairline, wordmark tile, login card edge) so
+   * the dashboard reads as the platform's sibling without importing its
+   * dark chrome. Never for text or risk semantics. */
+  --brand-a:    oklch(58% 0.19 345);
+  --brand-b:    oklch(45% 0.17 295);
+
   /* Legacy aliases. Existing utility classes still resolve. */
   --background: var(--bg);
   --foreground: var(--text);
@@ -49,7 +56,12 @@
   --color-risk-md-bg: var(--risk-md-bg);
   --color-risk-lo: var(--risk-lo);
   --color-risk-lo-bg: var(--risk-lo-bg);
-  --font-sans: var(--font-geist-sans);
+  --color-brand-a: var(--brand-a);
+  --color-brand-b: var(--brand-b);
+  /* Nunito Sans is the UI face (matches the platform's rounded
+   * humanist register); Geist is the fallback, Geist Mono keeps the
+   * data surfaces. */
+  --font-sans: var(--font-nunito-sans), var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 

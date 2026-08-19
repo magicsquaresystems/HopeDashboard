@@ -82,7 +82,7 @@ export function tierExplanation(
               : `${lo}–${hi}`;
     return (
         `${STATUS[level]?.label ?? "Check in soon"}: ${band} for this week's model. ` +
-        `Cut-offs are set low on purpose — they catch around 9 in 10 ` +
+        `Cut-offs are set low on purpose. They catch around 9 in 10 ` +
         `participants who go on to leave, so a flag means "worth a look", ` +
         `not "likely to drop out".`
     );

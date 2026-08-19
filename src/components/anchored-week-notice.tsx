@@ -48,14 +48,12 @@ export function AnchoredWeekNotice({
                     className="mt-px h-3.5 w-3.5 shrink-0"
                     aria-hidden
                 />
-                {/* Explicit {" "} before the dash: the compiler strips a
-                    plain space between an expression and a text node that
-                    carries an HTML entity, rendering "week 6— the model". */}
                 <span>
-                    Ranking held at week {MODEL_MAX_WEEK}{" "}
-                    — the model has no week {week} horizon. Sort order and
-                    scores are unchanged since week {MODEL_MAX_WEEK}; use
-                    “last active” to spot who has gone quiet since.
+                    Ranking held at week {MODEL_MAX_WEEK}. The model is not
+                    trained past that week, so sort order and scores are
+                    unchanged since week {MODEL_MAX_WEEK}. Use
+                    &ldquo;last active&rdquo; to spot who has gone quiet
+                    since.
                 </span>
             </p>
         );
@@ -89,7 +87,7 @@ export function AnchoredWeekNotice({
                         {MODEL_MAX_WEEK} snapshot, not a current assessment.
                     </p>
                     <p className="mt-1.5 text-xs leading-relaxed text-text-2">
-                        Recent activity below is still live — it is measured
+                        Recent activity below is still live. It is measured
                         to the selected week, so it is the reliable signal
                         for who needs attention now.
                     </p>

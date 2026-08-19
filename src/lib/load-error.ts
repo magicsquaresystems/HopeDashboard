@@ -29,7 +29,7 @@ export function friendlyLoadError(message: string): FriendlyLoadError {
     ) {
         return {
             title: "Your session has ended",
-            body: "Refresh the page, or open the Insights Hub again from your Hope Move dashboard to sign back in.",
+            body: "Refresh the page, or open the Insights Hub again from your Hope Move dashboard.",
             detail: message,
         };
     }
@@ -44,7 +44,7 @@ export function friendlyLoadError(message: string): FriendlyLoadError {
 
     return {
         title: "Risk scores aren't available right now",
-        body: "We couldn't load the follow-up list. Participant activity may still open — try again in a minute, and tell the programme team if it keeps happening.",
+        body: "We couldn't load the follow-up list. Try again in a minute. If it keeps happening, tell the programme team.",
         detail: message,
     };
 }

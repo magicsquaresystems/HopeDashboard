@@ -271,8 +271,8 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                 {notStarted && !isLoading && !error && (
                     <p className="px-1 py-4 text-center text-xs text-muted">
                         This cohort started less than a week ago. Scoring
-                        opens once the first week completes — the model
-                        needs a full week of behaviour to read.
+                        opens once the first week completes, because the
+                        model needs a full week of activity to read.
                     </p>
                 )}
                 {bundle.data === null &&
@@ -280,7 +280,7 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                     !bundle.isLoading &&
                     !notStarted && (
                         <p className="px-1 py-4 text-center text-xs text-muted">
-                            This cohort isn&apos;t connected yet — there&apos;s
+                            This cohort isn&apos;t connected yet, so there is
                             no activity data for it here. If that seems wrong,
                             tell the programme team.
                         </p>
@@ -326,8 +326,12 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                     );
                 })}
                 {totalPages > 1 && (
-                    <div className="flex items-center justify-between gap-2 border-t border-border pt-2 text-xs text-muted">
-                        <span>
+                    // flex-wrap + whitespace-nowrap: in a narrow column
+                    // the label drops below the buttons instead of
+                    // wrapping mid-phrase or forcing a horizontal
+                    // scrollbar onto the whole queue card.
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2 text-xs text-muted">
+                        <span className="whitespace-nowrap">
                             Showing {pageStart + 1}–{pageEnd} of{" "}
                             {visible.length}
                         </span>

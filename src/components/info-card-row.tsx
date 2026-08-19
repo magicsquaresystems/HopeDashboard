@@ -58,7 +58,7 @@ export function InfoCardRow({ prediction }: InfoCardRowProps) {
                         What to do
                     </span>
                     <span
-                        title="How engaged this participant currently is — derived from their risk drivers."
+                        title="How engaged this participant currently is, based on their risk drivers."
                         className={
                             "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium " +
                             ACTIVATION_TONE[activation]

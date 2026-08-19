@@ -97,7 +97,7 @@ export function WeekSelector({
                             onClick={() => setWeek(w)}
                             title={
                                 noData
-                                    ? `Week ${w} hasn't finished yet — no behaviour to score`
+                                    ? `Week ${w} hasn't finished yet, so there is nothing to score`
                                     : isAnchoredWeek(w)
                                       ? `Week ${w} · scored against the model's W${MODEL_MAX_WEEK} horizon`
                                       : `Score the cohort at week ${w} (days 1–${w * 7})`
@@ -134,7 +134,7 @@ export function WeekSelector({
                     } days of behaviour; anything after that does not change the score.`}
                     className="inline-flex items-center gap-1.5 rounded-md border border-risk-md bg-risk-md-bg px-2 py-1 text-xs text-risk-md"
                 >
-                    anchored to W{MODEL_MAX_WEEK}
+                    score held at week {MODEL_MAX_WEEK}
                 </span>
             )}
             {hasFutureWeeks && (
@@ -144,7 +144,7 @@ export function WeekSelector({
                 >
                     <Lock className="h-3 w-3" aria-hidden />
                     {maxWithData === 0
-                        ? "first week in progress — scoring opens at day 7"
+                        ? "first week in progress, scoring opens at day 7"
                         : `W${maxWithData + 1}–W${weeks.length} not yet run`}
                 </span>
             )}

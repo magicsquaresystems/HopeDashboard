@@ -41,7 +41,7 @@ export default async function CohortDashboard({
                 starts at h3 ("Follow-up queue") and a screen-reader user
                 gets no page-level title to orient from. */}
             <h1 className="sr-only">
-                Participant support — cohort {cohort.code}
+                Participant Insights Hub, cohort {cohort.code}
             </h1>
             <CohortSessionReset cohortId={cohort.id} />
             <Topbar cohort={cohort} />

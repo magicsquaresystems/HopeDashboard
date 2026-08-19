@@ -27,7 +27,7 @@ export default function ErrorPage({
             <div className="w-full max-w-md space-y-4">
                 <EmptyState
                     title="Something went wrong"
-                    description="The page hit an unexpected error. Your queue and notes are safe — trying again usually fixes it."
+                    description="The page hit an unexpected error. Your queue and notes are safe. Trying again usually fixes it."
                 >
                     <div className="flex items-center justify-center gap-2">
                         <Button type="button" onClick={reset}>
