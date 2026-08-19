@@ -1,15 +1,21 @@
+"use client";
+
 import { ArrowLeft } from "lucide-react";
 
+import { useHopeMoveUrl } from "@/app/providers";
 import { cn } from "@/lib/utils";
 
 /**
  * The way back to the Hope Move platform.
  *
- * Facilitators arrive from Hope Move and think of it as home; every
- * page should offer the way back, and the target lives in ONE place so
- * a page can't quietly lose it. Renders nothing when
- * `NEXT_PUBLIC_HOPE_MOVE_URL` is unset (local dev, or a deployment not
- * yet configured) — a link to nowhere is worse than no link.
+ * Facilitators arrive from Hope Move and think of it as home, so every
+ * page should offer the way back and the target should live in ONE
+ * place. The URL is resolved server-side (see lib/hope-move-url.ts) and
+ * read from context here, which is what lets the same component work in
+ * the topbar, on the cohort picker, and on the signed-out page alike.
+ *
+ * Renders nothing when no platform URL can be resolved at all — a link
+ * to nowhere is worse than no link.
  *
  * `quiet` is the in-workspace variant, small and out of the way so it
  * orients without inviting a mid-draft exit. `prominent` is for pages
@@ -24,7 +30,7 @@ export function HopeMoveLink({
     label?: string;
     className?: string;
 }) {
-    const hopeMoveUrl = process.env.NEXT_PUBLIC_HOPE_MOVE_URL;
+    const hopeMoveUrl = useHopeMoveUrl();
     if (!hopeMoveUrl) return null;
 
     if (variant === "prominent") {

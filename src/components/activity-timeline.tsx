@@ -505,7 +505,11 @@ export function ActivityTimeline({
     // pattern) keeps it one click away. The "Full history" toggle lives
     // inside, for when it's open.
     return (
-        <details className="group">
+        // Open by default: "what has this person actually been doing" is
+        // the question a facilitator asks immediately after seeing a risk
+        // score, and the compact feed is only five rows. Collapsed, it
+        // hid the answer behind a click and left the panel half empty.
+        <details className="group" open>
             <summary className="flex cursor-pointer select-none items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted">
                 Recent activity
                 <span className="text-[10px] text-muted/70 group-open:hidden">

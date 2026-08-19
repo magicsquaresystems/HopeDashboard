@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Nunito_Sans } from "next/font/google";
 import { Providers } from "./providers";
 import { SiteFooter } from "@/components/site-footer";
+import { resolveHopeMoveUrl } from "@/lib/hope-move-url";
 import "./globals.css";
 
 /**
@@ -50,7 +51,9 @@ export default function RootLayout({
             suppressHydrationWarning
         >
             <body className="min-h-full flex flex-col bg-background text-text">
-                <Providers>{children}</Providers>
+                <Providers hopeMoveUrl={resolveHopeMoveUrl()}>
+                    {children}
+                </Providers>
                 <SiteFooter />
             </body>
         </html>
