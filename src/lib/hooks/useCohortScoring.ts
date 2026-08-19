@@ -66,7 +66,17 @@ export function useCohortScoring(cohortId: number) {
          * True from the moment a re-score is triggered until scores land.
          * Covers the bundle fetch too: both phases leave the queue without
          * numbers, and the distinction means nothing to a facilitator.
+         *
+         * A failed scoring call ends it. Keying purely on the absence of
+         * `batch.data` cannot distinguish "still working" from "asked and
+         * was refused", so a failure left "Scoring N participants…"
+         * spinning over the middle of the page for as long as the
+         * facilitator was willing to wait, while the real reason sat in a
+         * line of red text beside the empty queue. Whatever the failure
+         * is, scoring is not in progress.
          */
-        isScoring: bundle.isLoading || (histories.length > 0 && !batch.data),
+        isScoring:
+            bundle.isLoading ||
+            (histories.length > 0 && !batch.data && !batch.isError),
     };
 }

@@ -82,7 +82,11 @@ export function Detail({
     }, [selectedId, bundle.data, scoreAt]);
     const prediction = useParticipantPrediction(history, cohortId);
     const aliasLabel = useBundleDisplayName(selectedId ?? "", cohortId);
-    const { isScoring, total: cohortTotal } = useCohortScoring(cohortId);
+    const {
+        isScoring,
+        total: cohortTotal,
+        batch: cohortBatch,
+    } = useCohortScoring(cohortId);
 
     // Neighbour navigation: derive prev/next from the cohort bundle's
     // participant order. Falls back to no-op when the bundle hasn't
@@ -152,6 +156,16 @@ export function Detail({
                                 </p>
                             </div>
                         </div>
+                    ) : cohortBatch.isError ? (
+                        /* Scoring failed, so the queue is empty and there
+                           is nobody to pick. Inviting the facilitator to
+                           choose from it anyway reads as their mistake
+                           rather than an outage. The queue panel carries
+                           the reason; this says why the page is bare. */
+                        <EmptyState
+                            title="Risk scores are unavailable"
+                            description="The cohort could not be scored, so the follow-up queue has nothing to select. The reason is shown beside the queue."
+                        />
                     ) : (
                         <EmptyState
                             title="No participant selected"
