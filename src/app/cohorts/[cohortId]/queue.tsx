@@ -160,30 +160,41 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
     // one click. Only renders at lg+ — at smaller breakpoints the queue
     // is a full-width row above the detail panel and collapsing it
     // would just create empty space.
-    if (collapsed) {
-        return (
-            <Card className="hidden flex-col items-center gap-3 py-3 lg:flex">
-                <button
-                    type="button"
-                    onClick={toggleCollapsed}
-                    aria-label="Expand follow-up queue"
-                    title="Expand follow-up queue"
-                    className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text"
-                >
-                    <ChevronsRight className="h-4 w-4" aria-hidden />
-                </button>
-                <Badge variant="neutral" title={listedLabel}>
-                    {visible.length}
-                </Badge>
-                <span className="rotate-180 text-xs font-semibold uppercase tracking-wide text-muted [writing-mode:vertical-rl]">
-                    Follow-up queue
-                </span>
-            </Card>
-        );
-    }
+    //
+    // The full queue still renders below `lg` even when collapsed, and
+    // that pairing is load-bearing: the collapse flag is persisted to
+    // localStorage, so a facilitator who collapsed the queue on a
+    // laptop and later opened the page on a phone used to get no queue
+    // at all — and no control to bring it back, because the expand
+    // button lives inside the hidden rail.
+    const rail = collapsed ? (
+        <Card className="hidden flex-col items-center gap-3 py-3 lg:flex">
+            <button
+                type="button"
+                onClick={toggleCollapsed}
+                aria-label="Expand follow-up queue"
+                title="Expand follow-up queue"
+                className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text"
+            >
+                <ChevronsRight className="h-4 w-4" aria-hidden />
+            </button>
+            <Badge variant="neutral" title={listedLabel}>
+                {visible.length}
+            </Badge>
+            <span className="rotate-180 text-xs font-semibold uppercase tracking-wide text-muted [writing-mode:vertical-rl]">
+                Follow-up queue
+            </span>
+        </Card>
+    ) : null;
 
     return (
-        <Card className="flex flex-col">
+        <>
+        {rail}
+        <Card
+            className={
+                "flex flex-col" + (collapsed ? " lg:hidden" : "")
+            }
+        >
             <CardHeader>
                 <div className="flex items-center justify-between">
                     <CardTitle>Follow-up queue</CardTitle>
@@ -443,6 +454,7 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                 )}
             </CardContent>
         </Card>
+        </>
     );
 }
 

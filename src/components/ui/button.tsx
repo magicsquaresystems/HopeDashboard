@@ -4,16 +4,20 @@ import { forwardRef, type ButtonHTMLAttributes } from "react";
 
 import { cn } from "@/lib/utils";
 
+// Tokens, not raw slate: these primitives predate the oklch token set in
+// globals.css, and their hardcoded palette was the one place the UI
+// drifted off it — most visibly the grey focus ring on an accent-driven
+// page.
 const buttonVariants = cva(
-    "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:pointer-events-none disabled:opacity-50",
+    "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:pointer-events-none disabled:opacity-50",
     {
         variants: {
             variant: {
-                primary: "bg-slate-900 text-white hover:bg-slate-800",
+                primary: "bg-text text-surface hover:bg-text/90",
                 secondary:
-                    "bg-white text-slate-900 border border-slate-200 hover:bg-slate-100",
-                ghost: "text-slate-700 hover:bg-slate-100",
-                danger: "bg-rose-600 text-white hover:bg-rose-700",
+                    "bg-surface text-text border border-border hover:bg-surface-2",
+                ghost: "text-text-2 hover:bg-surface-2",
+                danger: "bg-risk-hi text-white hover:bg-risk-hi/90",
             },
             size: {
                 sm: "h-8 px-3",
