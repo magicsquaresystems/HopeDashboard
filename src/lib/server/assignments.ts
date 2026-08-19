@@ -94,14 +94,15 @@ export async function cohortsForFacilitator(
 
     const platform = await hopeCohorts();
     if (platform) {
-        const ids = platform.map((c) => c.id);
-        // Intersect rather than replace while it is still unconfirmed
-        // whether the platform scopes its response to the bearer token.
-        // If it turns out to return every cohort, narrowing by a local
-        // assignment keeps that from widening anyone's access; if it does
-        // scope, the intersection is a no-op. Drop this once the platform
-        // engineer confirms the endpoint is scoped.
-        return explicit ? ids.filter((id) => explicit.includes(id)) : ids;
+        // Confirmed 2026-08-19: the endpoint scopes to the bearer token.
+        // It answered this facilitator with exactly the two cohorts their
+        // platform profile lists, not the whole registry. The earlier
+        // intersection with a local assignment was insurance against the
+        // opposite, and its own note said to drop it on confirmation —
+        // kept any longer it silently subtracts, so a stale
+        // `FACILITATOR_COHORTS` naming last term's cohorts would empty
+        // the picker for a facilitator the platform says is assigned.
+        return platform.map((c) => c.id);
     }
 
     if (explicit) return explicit;

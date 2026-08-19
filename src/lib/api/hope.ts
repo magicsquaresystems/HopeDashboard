@@ -100,13 +100,27 @@ export function toCohortMeta(raw: unknown): CohortMeta | null {
     };
 }
 
-/** Drops rows the platform sends that we cannot use, rather than failing
- *  the whole list — one malformed cohort should not hide the others. */
+/**
+ * Drops rows the platform sends that we cannot use, rather than failing
+ * the whole list — one malformed cohort should not hide the others.
+ *
+ * The live endpoint wraps the rows in `{ "cohorts": [...] }` rather than
+ * returning the bare array this was first written against, and answers a
+ * facilitator with no cohorts the same way. Both shapes are accepted:
+ * insisting on the bare array turned a perfectly good 200 into an empty
+ * picker, which reads to a facilitator as "you have no cohorts" and is
+ * indistinguishable from the platform being down. `Cohorts` is accepted
+ * beside `cohorts` because the platform's own `/api/auth/exchange`
+ * serialises PascalCase, so the casing is evidently per-endpoint rather
+ * than a property of the API.
+ */
 export function toCohortList(payload: unknown): CohortMeta[] {
-    if (!Array.isArray(payload)) return [];
-    return payload
-        .map(toCohortMeta)
-        .filter((c): c is CohortMeta => c !== null);
+    const wrapped = payload as { cohorts?: unknown; Cohorts?: unknown } | null;
+    const rows = Array.isArray(payload)
+        ? payload
+        : (wrapped?.cohorts ?? wrapped?.Cohorts);
+    if (!Array.isArray(rows)) return [];
+    return rows.map(toCohortMeta).filter((c): c is CohortMeta => c !== null);
 }
 
 /** The values `POST /api/dashboard/comment` accepts for `activityType`. */

@@ -150,8 +150,24 @@ describe("toCohortList", () => {
         expect(list.map((c) => c.id)).toEqual([123]);
     });
 
-    it("returns an empty list for a non-array payload", () => {
-        for (const bad of [null, undefined, {}, "[]"]) {
+    it("reads the rows out of the wrapper the live endpoint sends", () => {
+        // `{ cohorts: [...] }` is what the platform actually returns.
+        // Insisting on a bare array here emptied the picker for every
+        // facilitator while the platform was answering 200 with their
+        // real cohorts.
+        const list = toCohortList({ cohorts: [DOCUMENTED_ROW] });
+        expect(list.map((c) => c.id)).toEqual([123]);
+    });
+
+    it("accepts the PascalCase wrapper too", () => {
+        // The platform's own /api/auth/exchange serialises PascalCase, so
+        // the casing is per-endpoint rather than a property of the API.
+        const list = toCohortList({ Cohorts: [DOCUMENTED_ROW] });
+        expect(list.map((c) => c.id)).toEqual([123]);
+    });
+
+    it("returns an empty list for a payload carrying no rows", () => {
+        for (const bad of [null, undefined, {}, "[]", { cohorts: null }]) {
             expect(toCohortList(bad)).toEqual([]);
         }
     });
