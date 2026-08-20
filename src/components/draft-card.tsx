@@ -110,6 +110,8 @@ export function DraftCard({
     const [thumb, setThumb] = useState<"up" | "down" | null>(null);
     const bodyRef = useRef<HTMLTextAreaElement>(null);
     const clipboard = useCopyToClipboard();
+    /** Whether this draft has already been recorded as used. */
+    const usedRef = useRef(false);
 
     // Polish-with-AI state. `polishShadow` holds the pre-polish text so a
     // facilitator can roll back if the rephrased version isn't what they
@@ -175,7 +177,18 @@ export function DraftCard({
             // Only a real copy counts as using the draft — this is what
             // records the research event and marks the participant
             // contacted for colleagues.
-            onUse(String(draft.draft_id), text, edited ? "edit" : "accept");
+            //
+            // Once per card, though. Under the old "Send" label a click
+            // was a final act; "Copy" invites repetition — re-copying to
+            // paste again, or copying two personas to compare — and each
+            // one used to file another accept/edit and another memory
+            // write for a reply that will be sent once or not at all.
+            // The card remounts per draft (`key`), so the latch resets
+            // exactly when the draft genuinely changes.
+            if (!usedRef.current) {
+                usedRef.current = true;
+                onUse(String(draft.draft_id), text, edited ? "edit" : "accept");
+            }
         } else {
             // Clipboard refused (permissions, insecure context). Select
             // the text so one keystroke finishes the job, and say so.

@@ -17,6 +17,12 @@ type TopbarProps = {
 
 export function Topbar({ cohort }: TopbarProps) {
     const { batch, isScoring } = useCohortScoring(cohort.id);
+    // A failed score is not a score of zero. `isScoring` now ends on
+    // error (so the page stops spinning), which left these pills
+    // rendering a confident "0 need follow-up" beside a queue saying
+    // the scores could not be loaded. The dash means "no number yet",
+    // and that is still the truth after a failure.
+    const noNumbers = isScoring || batch.isError;
     const queueState = useQueueState(cohort.id);
     const sentThisSession = useSessionStatsStore((s) =>
         s.contactedCount(cohort.id),
@@ -27,7 +33,11 @@ export function Topbar({ cohort }: TopbarProps) {
     // silently logging outreach under a colleague's name would poison
     // both the audit trail and the training feedback.
     const { data: session } = useSession();
-    const who = session?.user?.name ?? session?.user?.email ?? null;
+    // `||`, not `??`: an account whose name is the empty string would
+    // otherwise keep it, and since the topbar only renders the account
+    // menu when `who` is truthy, that facilitator would have no way to
+    // sign out at all.
+    const who = session?.user?.name || session?.user?.email || null;
 
     // Frozen at mount for the same reason as the queue's clock: snooze
     // expiry compared against a ticking now would move the counts under
@@ -101,12 +111,12 @@ export function Topbar({ cohort }: TopbarProps) {
                 <StatPill
                     value={needsFollowUp}
                     label="need follow-up"
-                    loading={isScoring}
+                    loading={noNumbers}
                 />
                 <StatPill
                     value={high}
                     label="high priority"
-                    loading={isScoring}
+                    loading={noNumbers}
                 />
                 {/* Session counter is local state — never in flight. */}
                 <StatPill value={sentThisSession} label="contacted this session" />

@@ -231,14 +231,20 @@ export function pickReplyTarget(
         scoreWindowEnd(history) - new Date(latest.timestamp).getTime();
     const daysAgo = Math.max(0, Math.floor(ageMs / DAY_MS));
     const isDiscussion = latest.event_type === "discussion_post";
-    const typeKnown = isDiscussion || latest.activity_type != null;
+    // An empty string is not a known type: it would render a blank
+    // badge and reach /generate as "", which the service rejects.
+    const typeKnown =
+        isDiscussion ||
+        (typeof latest.activity_type === "string" &&
+            latest.activity_type.trim() !== "");
     // Forum posts are typed "Discussion" (server-side enum); cast
     // through unknown because the dashboard ActivityType union stays
     // narrow (GoalSetting/Gratitude/MyHOPE) by design.
     const activityType: ActivityType = isDiscussion
         ? ("Discussion" as unknown as ActivityType)
-        : ((latest.activity_type as ActivityType | undefined) ??
-          "GoalSetting");
+        : typeKnown
+          ? (latest.activity_type as ActivityType)
+          : "GoalSetting";
 
     return {
         text: (latest.description ?? "").trim(),

@@ -1,9 +1,18 @@
 /**
- * Where "back to Hope Move" points.
+ * Where "back to the Facilitator Dashboard" points.
  *
- * Server-only: `HOPE_API_URL` is not `NEXT_PUBLIC_`-prefixed, so it is
- * readable here and never in the browser. The root layout resolves this
- * once and hands the value to the client tree — see `providers.tsx`.
+ * Read on the server, then handed to the client tree by the root layout
+ * (see `providers.tsx`). Note what that means: the resolved URL travels
+ * to the browser in the RSC payload of every page, including the
+ * signed-out one. That is fine for a public dashboard origin and is the
+ * whole point of resolving it here, but it is not "the value never
+ * leaves the server" — only `HOPE_API_URL` itself stays server-side.
+ *
+ * The fallback also assumes the platform's API base and its browser
+ * origin are the same host, which is true for this deployment. A
+ * deployment that reaches the platform over a private address would
+ * need `NEXT_PUBLIC_HOPE_MOVE_URL` set explicitly, or it would render a
+ * confident link to somewhere a facilitator's browser cannot go.
  *
  * The fallback matters more than the override. A deployment that talks
  * to the platform at all necessarily has `HOPE_API_URL`, and the

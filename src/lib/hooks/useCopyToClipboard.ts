@@ -40,8 +40,8 @@ export function useCopyToClipboard(resetMs = 2500) {
                 /* fall through to execCommand */
             }
             if (!ok) {
+                const scratch = document.createElement("textarea");
                 try {
-                    const scratch = document.createElement("textarea");
                     scratch.value = text;
                     // Off-screen, not display:none — a hidden element
                     // cannot be selected, and selection is what
@@ -52,9 +52,14 @@ export function useCopyToClipboard(resetMs = 2500) {
                     document.body.appendChild(scratch);
                     scratch.select();
                     ok = document.execCommand("copy");
-                    document.body.removeChild(scratch);
                 } catch {
                     ok = false;
+                } finally {
+                    // In a context where execCommand throws (sandboxed
+                    // iframe, permissions policy) the removal used to be
+                    // skipped, leaving one orphaned textarea on the body
+                    // per failed attempt.
+                    scratch.remove();
                 }
             }
             setCopied(ok);

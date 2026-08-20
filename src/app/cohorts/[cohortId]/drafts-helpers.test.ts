@@ -178,6 +178,18 @@ describe("pickReplyTarget", () => {
         expect(target?.typeKnown).toBe(false);
     });
 
+    it("treats an empty activity_type as unknown", () => {
+        // "" is not null, so it used to pass as a known type: a blank
+        // badge on screen and an empty activity_type on the wire, which
+        // /generate rejects.
+        const target = pickReplyTarget(
+            history([activity("2026-01-20T00:00:00Z", { activity_type: "" })]),
+            null,
+        );
+        expect(target?.typeKnown).toBe(false);
+        expect(target?.activityType).toBe("GoalSetting");
+    });
+
     it("carries the platform activity id when present", () => {
         const target = pickReplyTarget(
             history([activity("2026-01-20T00:00:00Z", { activity_id: 4242 })]),

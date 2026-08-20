@@ -53,13 +53,33 @@ export function programmeLengthFrom(
     startDate: string,
     endDate: string,
 ): number {
+    return measureProgramme(startDate, endDate).days;
+}
+
+/**
+ * The length, plus whether it was measured or assumed.
+ *
+ * Only this function knows which happened, so the flag is derived here
+ * rather than inferred by the caller. Inferring it from "is there an
+ * endDate string" was wrong for every input that parses to nothing
+ * useful: `"0001-01-01T00:00:00"` (the .NET `default(DateTime)` this
+ * platform's serialiser can emit), `"TBD"`, a whitespace string, or any
+ * range that ends at or before it starts. All of those fall back to the
+ * six-week default, and all of them used to be reported as a known
+ * length — which is exactly the invented programme shape the flag
+ * exists to prevent.
+ */
+export function measureProgramme(
+    startDate: string,
+    endDate: string,
+): { days: number; known: boolean } {
     const start = Date.parse(ensureUtc(startDate));
     const end = Date.parse(ensureUtc(endDate));
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
-        return DEFAULT_PROGRAMME_LENGTH_DAYS;
+        return { days: DEFAULT_PROGRAMME_LENGTH_DAYS, known: false };
     }
     const weeks = Math.round((end - start) / MS_PER_DAY / 7);
-    return Math.max(1, weeks) * 7;
+    return { days: Math.max(1, weeks) * 7, known: true };
 }
 
 /**
@@ -88,21 +108,18 @@ export function toCohortMeta(raw: unknown): CohortMeta | null {
     if (!startDate) return null;
 
     const endDate = typeof row.endDate === "string" ? row.endDate : "";
-    const programmeLengthDays = programmeLengthFrom(startDate, endDate);
     // `endDate: null` is common on the platform for cohorts with no
     // scheduled finish. The length still has to be a number for scoring,
     // but the UI must not present the fallback as the programme's shape.
-    const programmeLengthKnown =
-        programmeLengthDays !== DEFAULT_PROGRAMME_LENGTH_DAYS ||
-        Boolean(endDate);
+    const { days, known } = measureProgramme(startDate, endDate);
 
     return {
         id,
         code: String(row.cohortName ?? `Cohort ${id}`),
         moduleId: Number(row.moduleId) || 0,
         moduleName: String(row.moduleName ?? ""),
-        programmeLengthDays,
-        programmeLengthKnown,
+        programmeLengthDays: days,
+        programmeLengthKnown: known,
         effectiveStart: ensureUtc(startDate),
     };
 }

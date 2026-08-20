@@ -1,12 +1,10 @@
-"use client";
-
-import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
 import { HopeMoveLink } from "@/components/hope-move-link";
+import { LoginError } from "./login-error";
 
 /**
- * Not the way in — the way in is `/enter`, which the Hope Move platform
+ * Not the way in — the way in is `/enter`, which the Hope platform
  * links to with a signed identity token (see lib/auth/handoff.ts).
  * Facilitators are already signed in over there; asking them to
  * authenticate again would be friction with no security benefit.
@@ -18,43 +16,27 @@ import { HopeMoveLink } from "@/components/hope-move-link";
  * was a testing affordance, and testing affordances don't belong on a
  * deployment that fronts real participant data. For local development,
  * mint a hand-off link with `scripts/mint-handoff-token.mjs`.
+ *
+ * A server component on purpose. It was a client component so it could
+ * read `?error=`, and that single call emptied the prerendered HTML —
+ * every visitor got a blank page with a footer until hydration. The
+ * search-param read now lives in `LoginError` alone.
  */
-const HANDOFF_ERRORS: Record<string, string> = {
-    no_token: "That link didn't carry a sign-in token.",
-    invalid_token:
-        "That link has expired or isn't valid any more. Links from Hope only work once, and only for a short time. Open the Insights Hub again from your Facilitator Dashboard.",
-    not_configured:
-        "Sign-in from Hope isn't set up on this deployment yet. Contact the programme admin.",
-    // The code-exchange door (`/auth/callback`). Worded the same way as
-    // the hand-off errors on purpose: the facilitator does not know or
-    // care which of the two routes brought them here, and the fix is the
-    // same either way — go back and open the Insights Hub again.
-    no_code: "That link didn't carry a sign-in code.",
-    exchange_failed:
-        "We couldn't confirm that sign-in with Hope. The link may have already been used or expired. Open the Insights Hub again from your Facilitator Dashboard.",
-    session_expired:
-        "Your session with Hope has expired. Open the Insights Hub again from your Facilitator Dashboard to continue.",
-};
+
+// Rendered per request so the platform URL comes from the running
+// environment rather than whatever was set when the image was built.
+// This is the page a facilitator lands on when their session expires,
+// so a stale or missing way back is the difference between a dead end
+// and a way home; it has nothing to gain from being static.
+export const dynamic = "force-dynamic";
 
 export default function LoginPage() {
-    return (
-        <Suspense fallback={null}>
-            <LoginBody />
-        </Suspense>
-    );
-}
-
-function LoginBody() {
-    const params = useSearchParams();
-    const handoffError = HANDOFF_ERRORS[params.get("error") ?? ""] ?? null;
-
     return (
         <main className="flex flex-1 items-center justify-center px-4">
             <div className="w-full max-w-sm overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
                 {/* The platform's magenta-to-purple gradient, as a top
                     edge rather than a whole header band: enough to say
-                    "same family as Hope Move" without importing its
-                    chrome. */}
+                    "same family as Hope" without importing its chrome. */}
                 <div
                     aria-hidden
                     className="h-1 bg-linear-to-r from-brand-a to-brand-b"
@@ -80,14 +62,9 @@ function LoginBody() {
                         automatically.
                     </p>
 
-                    {handoffError && (
-                        <p
-                            role="alert"
-                            className="rounded-md border border-risk-md bg-risk-md-bg px-3 py-2 text-xs leading-relaxed text-risk-md"
-                        >
-                            {handoffError}
-                        </p>
-                    )}
+                    <Suspense fallback={null}>
+                        <LoginError />
+                    </Suspense>
 
                     <HopeMoveLink
                         variant="prominent"

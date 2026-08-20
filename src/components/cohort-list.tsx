@@ -28,8 +28,14 @@ import type { CohortMeta } from "@/lib/cohorts";
 const SEARCH_THRESHOLD = 4;
 
 /** Inside the programme window right now — the cohort a facilitator is
- *  most likely here for. */
+ *  most likely here for.
+ *
+ *  A cohort whose length was never set has no window to be inside, so
+ *  it cannot be called live. Deriving one from the six-week fallback
+ *  declared open-ended cohorts finished 42 days after they started,
+ *  which both hid the badge and sank them down the ordering. */
 function isLive(c: CohortMeta, nowMs: number): boolean {
+    if (c.programmeLengthKnown === false) return false;
     const start = Date.parse(c.effectiveStart);
     if (!Number.isFinite(start)) return false;
     return start <= nowMs && nowMs < start + c.programmeLengthDays * 86_400_000;
@@ -110,7 +116,12 @@ export function CohortList({ cohorts }: { cohorts: CohortMeta[] }) {
                                 <CardContent>
                                     <p className="text-xs text-muted">
                                         Cohort #{c.id} ·{" "}
-                                        {c.programmeLengthDays}-day programme
+                                        {/* Same rule as the week bar: only
+                                            state a length the source
+                                            actually gave us. */}
+                                        {c.programmeLengthKnown === false
+                                            ? "no end date set"
+                                            : `${c.programmeLengthDays}-day programme`}
                                     </p>
                                 </CardContent>
                             </Card>

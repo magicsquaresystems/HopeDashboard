@@ -43,6 +43,26 @@ describe("toCohortMeta", () => {
         expect(meta?.programmeLengthKnown).toBe(false);
     });
 
+    it("does not trust an end date that measures nothing", () => {
+        // Every one of these falls back to the six-week default, so
+        // none of them may be reported as a known length. The first is
+        // .NET's `default(DateTime)`, which this platform's serialiser
+        // can emit; the rest are the ordinary ways a date field goes
+        // wrong. Deriving the flag from "is endDate non-empty" called
+        // all of them known and drew a six-week programme.
+        for (const endDate of [
+            "0001-01-01T00:00:00",
+            "TBD",
+            "   ",
+            "2026-01-01T00:00:00", // same day as start
+            "2025-01-01T00:00:00", // before start
+        ]) {
+            const meta = toCohortMeta({ ...DOCUMENTED_ROW, endDate });
+            expect(meta?.programmeLengthDays).toBe(42);
+            expect(meta?.programmeLengthKnown).toBe(false);
+        }
+    });
+
     it("treats a real end date as a known length", () => {
         // Cohort 1731, live at the time of writing: 17 Jun to 26 Aug is
         // ten weeks, and the platform does send the finish date for a

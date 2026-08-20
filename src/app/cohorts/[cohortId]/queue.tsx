@@ -256,7 +256,13 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                         className="mb-2"
                     />
                 )}
-                {isLoading && (
+                {/* The bundle's load counts as loading too. `isLoading`
+                    is the BATCH's, and the batch is disabled until
+                    histories exist, so keying skeletons on it alone left
+                    the body completely empty for the whole bundle fetch
+                    — and indefinitely when the query is paused offline,
+                    where nothing is loading, failing or absent. */}
+                {(isLoading || bundle.isLoading) && (
                     <div className="space-y-2">
                         {[0, 1, 2, 3, 4].map((i) => (
                             <Skeleton key={i} className="h-14 w-full" />
@@ -271,10 +277,16 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                     matches. Raw messages live in a collapsed disclosure
                     for whoever operates the deployment. */}
                 {bundle.isError && (
+                    // Routed through friendlyLoadError like the batch
+                    // branch: /api/cohort-bundle is the route that 401s
+                    // on an expired session and 403s on a removed cohort
+                    // assignment, and telling either of those to "try
+                    // again in a moment" offers a retry that can never
+                    // succeed instead of "sign in again".
                     <LoadErrorNotice
-                        title="We couldn't load this cohort's data"
-                        body="Participant activity didn't load, so there is nothing to score yet. Try again in a moment."
-                        detail={String((bundle.error as Error)?.message ?? "")}
+                        {...friendlyLoadError(
+                            String((bundle.error as Error)?.message ?? ""),
+                        )}
                         onRetry={() => bundle.refetch()}
                     />
                 )}
@@ -284,7 +296,7 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                         onRetry={() => batch.refetch()}
                     />
                 )}
-                {notStarted && !isLoading && !error && (
+                {notStarted && !isLoading && !error && !bundle.isError && (
                     <p className="px-1 py-4 text-center text-xs text-muted">
                         This cohort started less than a week ago. Scoring
                         opens once the first week completes, because the
@@ -306,7 +318,11 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                     !isLoading &&
                     !error &&
                     !bundle.isError &&
-                    bundle.data != null && (
+                    // `!== undefined`, not `!= null`: the null case is
+                    // the "not connected yet" state directly above, and
+                    // `!= null` also excluded the loaded-but-empty case
+                    // this line exists to cover.
+                    bundle.data !== undefined && (
                         <p className="px-1 py-4 text-center text-xs text-muted">
                             No participants match the current filter.
                         </p>
@@ -356,9 +372,17 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                             role="group"
                             aria-label="Queue pagination"
                         >
+                            {/* Both arrows step from the CLAMPED page.
+                                `page` can sit above the last page after
+                                the list shrinks (snoozing rows, say), and
+                                stepping from that stale value made an
+                                arrow look dead for several clicks while
+                                it walked back into range. */}
                             <button
                                 type="button"
-                                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                                onClick={() =>
+                                    setPage(Math.max(0, safePage - 1))
+                                }
                                 disabled={safePage === 0}
                                 className="rounded px-2 py-1 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
                                 aria-label="Previous page"
@@ -388,8 +412,8 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                             <button
                                 type="button"
                                 onClick={() =>
-                                    setPage((p) =>
-                                        Math.min(totalPages - 1, p + 1),
+                                    setPage(
+                                        Math.min(totalPages - 1, safePage + 1),
                                     )
                                 }
                                 disabled={safePage >= totalPages - 1}

@@ -32,6 +32,7 @@ export function AccountMenu({
 }) {
     const [open, setOpen] = useState(false);
     const wrapRef = useRef<HTMLDivElement>(null);
+    const triggerRef = useRef<HTMLButtonElement>(null);
     const hopeMoveUrl = useHopeMoveUrl();
 
     // Close on outside click and on Escape. Without both, a menu opened
@@ -42,7 +43,12 @@ export function AccountMenu({
             if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
         };
         const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") setOpen(false);
+            if (e.key !== "Escape") return;
+            setOpen(false);
+            // Focus would otherwise fall to <body> when the panel
+            // unmounts, stranding a keyboard user at the top of the
+            // document.
+            triggerRef.current?.focus();
         };
         document.addEventListener("pointerdown", onPointer);
         document.addEventListener("keydown", onKey);
@@ -64,10 +70,11 @@ export function AccountMenu({
     return (
         <div ref={wrapRef} className="relative">
             <button
+                ref={triggerRef}
                 type="button"
                 onClick={() => setOpen((v) => !v)}
                 aria-expanded={open}
-                aria-haspopup="menu"
+                aria-controls="account-panel"
                 className="flex items-center gap-2 rounded-md border border-border bg-surface py-1 pl-1 pr-2 transition-colors hover:bg-surface-2"
             >
                 <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent-2 text-[10px] font-semibold text-accent-ink">
@@ -86,15 +93,26 @@ export function AccountMenu({
             </button>
 
             {open && (
+                // A plain panel, not `role="menu"`. That role puts
+                // assistive tech into application mode, where arrow keys
+                // rather than Tab move between items — a contract this
+                // component does not implement, and one that would have
+                // made sign-out unreachable for a screen-reader user now
+                // that the menu is the only route to it. As ordinary
+                // links and buttons, Tab reaches everything.
                 <div
-                    role="menu"
+                    id="account-panel"
+                    aria-label={`Account: ${name}`}
                     className="absolute right-0 z-50 mt-1.5 w-60 overflow-hidden rounded-lg border border-border bg-surface shadow-lg"
                 >
                     <div className="border-b border-border px-3 py-2.5">
                         <p className="text-xs font-semibold text-text">
                             {name}
                         </p>
-                        {email && (
+                        {/* Skipped when the display name already IS the
+                            email, which happens for accounts with no
+                            name set — printing it twice looks broken. */}
+                        {email && email !== name && (
                             <p className="mt-0.5 truncate text-[11px] text-muted">
                                 {email}
                             </p>
@@ -104,7 +122,6 @@ export function AccountMenu({
                     {hopeMoveUrl && (
                         <a
                             href={hopeMoveUrl}
-                            role="menuitem"
                             className="flex items-center gap-2 px-3 py-2.5 text-xs text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
                         >
                             <ExternalLink
@@ -118,7 +135,6 @@ export function AccountMenu({
                     <div className="border-t border-border">
                         <button
                             type="button"
-                            role="menuitem"
                             onClick={() => signOut({ callbackUrl: "/login" })}
                             className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
                         >

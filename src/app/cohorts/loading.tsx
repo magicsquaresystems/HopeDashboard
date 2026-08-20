@@ -5,6 +5,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function CohortsLoading() {
     return (
         <main className="mx-auto w-full max-w-5xl px-6 py-10">
+            {/* Matches the real page's back link, which sits above the
+                header and would otherwise push everything down on swap. */}
+            <Skeleton className="mb-6 h-5 w-44" />
             <div className="mb-8 space-y-2">
                 <Skeleton className="h-7 w-40" />
                 <Skeleton className="h-4 w-72" />

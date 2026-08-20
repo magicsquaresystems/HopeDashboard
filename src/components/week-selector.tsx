@@ -167,7 +167,14 @@ export function WeekSelector({
             )}
             {hasFutureWeeks && (
                 <span
-                    title={`This cohort is ${weeks.length} weeks long and has completed ${maxWithData}. Later weeks unlock as they elapse.`}
+                    title={
+                        programmeLengthKnown
+                            ? `This cohort is ${weeks.length} weeks long and has completed ${maxWithData}. Later weeks unlock as they elapse.`
+                            : // With no finish date, `weeks` is the
+                              // elapsed slice, so quoting its length
+                              // would state a programme length again.
+                              "Weeks unlock as they elapse. The platform has no finish date for this cohort."
+                    }
                     className="inline-flex items-center gap-1.5 text-xs text-muted"
                 >
                     <Lock className="h-3 w-3" aria-hidden />

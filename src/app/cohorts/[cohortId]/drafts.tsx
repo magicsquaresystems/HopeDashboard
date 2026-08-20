@@ -226,12 +226,17 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
                 .getState()
                 .recordContact(cohort.id, participantId);
         };
-        // The HITL research record needs a real draft_set_id — a
-        // hand-written reply has none, and inventing one would corrupt
-        // the research data. Contact marking must not depend on the
-        // research write landing, so it runs regardless of the event
-        // call's outcome once the copy has genuinely happened.
-        if (response) {
+        // The HITL research record needs a real draft_set_id AND a real
+        // draft id. `writeMode` has neither: its draft is synthesised
+        // locally with a fabricated uuid, and `response` may still hold
+        // the last AI generation for this participant because toggling
+        // "Write my own" does not clear it. Without the writeMode guard
+        // a hand-written reply is filed against that earlier draft set
+        // under an id no set contains — and per the /event contract that
+        // also drives a memory write, so the corruption outlives the
+        // row. Contact marking is separate and must not depend on the
+        // research write, so it runs either way once the copy is real.
+        if (response && !writeMode) {
             event.mutate({
                 draft_set_id: response.draft_set_id,
                 chosen_draft_id: draftId,
