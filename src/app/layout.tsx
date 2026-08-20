@@ -1,20 +1,20 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Nunito_Sans } from "next/font/google";
+import { Geist, Geist_Mono, Montserrat } from "next/font/google";
 import { Providers } from "./providers";
 import { SiteFooter } from "@/components/site-footer";
 import { resolveHopeMoveUrl } from "@/lib/hope-move-url";
 import "./globals.css";
 
 /**
- * Nunito Sans is the UI face: the Hope Move platform sets its pages in
- * a rounded humanist sans, and matching that register is most of what
- * makes the dashboard feel like the platform's sibling rather than a
- * stranger's admin panel. Geist stays loaded as the fallback face and
- * Geist Mono keeps the data surfaces (cohort codes, model chips,
- * tabular numbers).
+ * Montserrat is the UI face because it is literally the platform's:
+ * staging.poweredbyh4c.org computes `Montserrat, sans-serif` on body.
+ * Matching it is most of what makes the dashboard feel like the
+ * platform's sibling rather than a stranger's admin panel. Geist stays
+ * as the fallback face and Geist Mono keeps the data surfaces (cohort
+ * codes, model chips, tabular numbers).
  */
-const nunitoSans = Nunito_Sans({
-    variable: "--font-nunito-sans",
+const montserrat = Montserrat({
+    variable: "--font-montserrat",
     subsets: ["latin"],
 });
 
@@ -47,7 +47,7 @@ export default function RootLayout({
         // it does NOT hide mismatches in the tree below.
         <html
             lang="en"
-            className={`${nunitoSans.variable} ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+            className={`${montserrat.variable} ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
             suppressHydrationWarning
         >
             <body className="min-h-full flex flex-col bg-background text-text">

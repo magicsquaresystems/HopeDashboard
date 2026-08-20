@@ -231,31 +231,17 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                         role="group"
                         aria-label="Filter queue by status"
                     >
-                        {/* A segmented control, not a call to action. The
-                            primary variant's near-black filled the panel
-                            with the heaviest colour on the page for a
-                            selection the facilitator changes constantly;
-                            an accent tint marks the active filter without
-                            outshouting the risk badges beside it. */}
-                        {FILTERS.map((f) => {
-                            const isActive = filter === f;
-                            return (
-                                <button
-                                    key={f}
-                                    type="button"
-                                    aria-pressed={isActive}
-                                    onClick={() => setFilter(f)}
-                                    className={
-                                        "rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent " +
-                                        (isActive
-                                            ? "bg-accent-2 text-accent-ink"
-                                            : "text-muted hover:bg-surface-2 hover:text-text-2")
-                                    }
-                                >
-                                    {QUEUE_PILL_LABELS[f]}
-                                </button>
-                            );
-                        })}
+                        {FILTERS.map((f) => (
+                            <Button
+                                key={f}
+                                size="sm"
+                                variant={filter === f ? "primary" : "ghost"}
+                                aria-pressed={filter === f}
+                                onClick={() => setFilter(f)}
+                            >
+                                {QUEUE_PILL_LABELS[f]}
+                            </Button>
+                        ))}
                     </div>
                 </div>
             </CardHeader>
