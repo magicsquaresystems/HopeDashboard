@@ -21,7 +21,16 @@ import { auth } from "@/auth";
  * platform, which decides the destination itself.
  */
 export default auth((req) => {
-    if (!req.auth) {
+    // Checked positively, not by existence. Auth.js populates `auth`
+    // with an object carrying an `error` when the configuration is
+    // wrong (a missing or rotated AUTH_SECRET, say), and a bare
+    // `if (!req.auth)` treats that object as a valid session — the
+    // fail-open reported as GHSA-8fpg-xm3f-6cx3. This deployment spent
+    // days with AUTH_SECRET unset, so that is not a hypothetical shape.
+    // The library is patched (beta.32) and this does not rely on it:
+    // a session is only a session when it names someone.
+    const signedIn = Boolean(req.auth?.user?.email);
+    if (!signedIn) {
         return Response.redirect(new URL("/login", req.nextUrl.origin));
     }
 
@@ -31,7 +40,7 @@ export default auth((req) => {
     // `jwt` callback sets this when a refresh fails, and the only fix is
     // to go back to Hope Move for a new code — so say that rather than
     // letting them wonder where their cohorts went.
-    if (req.auth.error === "hope_refresh_failed") {
+    if (req.auth?.error === "hope_refresh_failed") {
         return Response.redirect(
             new URL("/login?error=session_expired", req.nextUrl.origin),
         );
