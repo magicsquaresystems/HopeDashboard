@@ -26,6 +26,7 @@ import {
     type CohortQueueState,
     type QueueOp,
 } from "@/lib/queue-state-shared";
+import { ApiError } from "@/lib/api/client";
 import { ensureSchema, getPool, hasDatabase } from "@/lib/server/db";
 
 if (typeof window !== "undefined") {
@@ -200,7 +201,25 @@ function readFile(cohortId: number): CohortQueueState {
 
 function writeFile(cohortId: number, state: CohortQueueState): void {
     const file = statePath(cohortId);
-    fs.mkdirSync(path.dirname(file), { recursive: true });
+    try {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+    } catch {
+        // A serverless host serves the bundle from a read-only
+        // filesystem, so this driver cannot work there at all: every
+        // snooze, dismiss and contacted marker failed with a raw
+        // `ENOENT … mkdir '/var/task/local/state'` surfaced to the
+        // browser as a 502, and the optimistic update then rolled back
+        // with no explanation. Say what is actually wrong instead. The
+        // fix is a database; this only stops the deployment lying about
+        // which problem it has.
+        throw new ApiError(
+            503,
+            "Snoozing and contact markers are not available on this " +
+                "deployment: they need DATABASE_URL to be set, because " +
+                "the server cannot write files.",
+            "queue_state_not_configured",
+        );
+    }
     const tmp = `${file}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(state, null, 2), "utf8");
     // rename() replaces atomically, but on Windows it throws EPERM when
