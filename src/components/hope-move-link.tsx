@@ -23,7 +23,12 @@ import { cn } from "@/lib/utils";
  */
 export function HopeMoveLink({
     variant = "quiet",
-    label = "Back to Hope Move",
+    // Names the page the facilitator actually lands on. The platform
+    // titles it "Facilitator Dashboard" and brands itself "HOPE
+    // Programme"; "Hope Move" is this project's internal name and
+    // appears nowhere a facilitator can see, so a link saying it would
+    // point at something they have never heard of.
+    label = "Back to Facilitator Dashboard",
     className,
 }: {
     variant?: "quiet" | "prominent";

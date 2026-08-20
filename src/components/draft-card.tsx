@@ -196,7 +196,7 @@ export function DraftCard({
                         <span className="text-muted">To:</span>{" "}
                         <span className="font-medium text-text">{toName}</span>
                         <span className="ml-1.5 text-muted">
-                            · paste into Hope Move
+                            · paste into Hope
                         </span>
                     </div>
                     <span className="inline-flex items-center gap-1 text-accent-ink">
@@ -361,7 +361,7 @@ export function DraftCard({
                         >
                             {clipboard.failed
                                 ? "Couldn't copy automatically. The text is selected, press Ctrl+C."
-                                : `Copied. Paste it to ${toName} in Hope Move.`}
+                                : `Copied. Paste it to ${toName} in Hope.`}
                         </p>
                     )}
                 </div>
@@ -434,7 +434,7 @@ export function DraftCard({
                         </div>
                         <p className="mt-1.5 italic">
                             Drafts are suggestions. Review before you paste
-                            into Hope Move.
+                            into Hope.
                         </p>
                     </div>
                 </details>

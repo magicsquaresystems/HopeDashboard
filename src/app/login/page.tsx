@@ -22,18 +22,18 @@ import { HopeMoveLink } from "@/components/hope-move-link";
 const HANDOFF_ERRORS: Record<string, string> = {
     no_token: "That link didn't carry a sign-in token.",
     invalid_token:
-        "That link has expired or isn't valid any more. Links from Hope Move only work once, and only for a short time. Open the Insights Hub again from your dashboard.",
+        "That link has expired or isn't valid any more. Links from Hope only work once, and only for a short time. Open the Insights Hub again from your Facilitator Dashboard.",
     not_configured:
-        "Sign-in from Hope Move isn't set up on this deployment yet. Contact the programme admin.",
+        "Sign-in from Hope isn't set up on this deployment yet. Contact the programme admin.",
     // The code-exchange door (`/auth/callback`). Worded the same way as
     // the hand-off errors on purpose: the facilitator does not know or
     // care which of the two routes brought them here, and the fix is the
     // same either way — go back and open the Insights Hub again.
     no_code: "That link didn't carry a sign-in code.",
     exchange_failed:
-        "We couldn't confirm that sign-in with Hope Move. The link may have already been used or expired. Open the Insights Hub again from your dashboard.",
+        "We couldn't confirm that sign-in with Hope. The link may have already been used or expired. Open the Insights Hub again from your Facilitator Dashboard.",
     session_expired:
-        "Your session with Hope Move has expired. Open the Insights Hub again from your dashboard to continue.",
+        "Your session with Hope has expired. Open the Insights Hub again from your Facilitator Dashboard to continue.",
 };
 
 export default function LoginPage() {
@@ -76,7 +76,7 @@ function LoginBody() {
 
                     <p className="text-sm leading-relaxed text-text-2">
                         There is no password here. Open the Insights Hub from
-                        your Hope Move dashboard and it signs you in
+                        your Facilitator Dashboard on Hope and it signs you in
                         automatically.
                     </p>
 
@@ -91,7 +91,7 @@ function LoginBody() {
 
                     <HopeMoveLink
                         variant="prominent"
-                        label="Go to Hope Move"
+                        label="Go to Facilitator Dashboard"
                     />
                 </div>
             </div>

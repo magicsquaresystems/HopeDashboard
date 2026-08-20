@@ -25,7 +25,9 @@ describe("friendlyLoadError", () => {
             '/api/proxy/dropout/batch failed: 401 {"detail":"Not signed in","code":"auth_required"}',
         );
         expect(state.title).toBe("Your session has ended");
-        expect(state.body).toContain("Hope Move");
+        // Names the page they land on, not this project's internal
+        // "Hope Move", which appears nowhere a facilitator can see.
+        expect(state.body).toContain("Facilitator Dashboard");
     });
 
     it("reads a 403 as an assignment problem, not an outage", () => {

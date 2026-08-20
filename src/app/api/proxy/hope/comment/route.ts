@@ -86,7 +86,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
         // post as anyone. Saying so beats a confusing upstream 401.
         throw new ApiError(
             503,
-            "This session is not linked to the Hope Move platform",
+            "This session is not linked to Hope",
             "hope_not_linked",
         );
     }

@@ -141,7 +141,7 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
                 <CardContent>
                     <EmptyState
                         title="Drafts appear here"
-                        description="Pick a participant to see their latest post and get suggested replies you can copy into Hope Move."
+                        description="Pick a participant to see their latest post and get suggested replies you can copy into Hope."
                     />
                 </CardContent>
             </Card>

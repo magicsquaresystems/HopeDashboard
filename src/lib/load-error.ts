@@ -29,7 +29,7 @@ export function friendlyLoadError(message: string): FriendlyLoadError {
     ) {
         return {
             title: "Your session has ended",
-            body: "Refresh the page, or open the Insights Hub again from your Hope Move dashboard.",
+            body: "Refresh the page, or open the Insights Hub again from your Facilitator Dashboard on Hope.",
             detail: message,
         };
     }

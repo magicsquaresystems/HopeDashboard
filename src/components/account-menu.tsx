@@ -111,7 +111,7 @@ export function AccountMenu({
                                 className="h-3.5 w-3.5 text-muted"
                                 aria-hidden
                             />
-                            Back to Hope Move
+                            Back to Facilitator Dashboard
                         </a>
                     )}
 
