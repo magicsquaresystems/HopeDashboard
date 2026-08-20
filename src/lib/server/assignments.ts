@@ -19,8 +19,14 @@
  *      the session carries platform credentials. It owns both the cohort
  *      registry and who may open what, which is what this module's
  *      earlier "FUTURE" note anticipated.
- *   2. `facilitator_cohorts` in Postgres, when `DATABASE_URL` is set.
- *   3. `FACILITATOR_COHORTS` env JSON — `{"a@x.org":[1680],"b@x.org":[1600,1651]}`.
+ *   2. `FACILITATOR_COHORTS` env JSON — `{"a@x.org":[1680],"b@x.org":[1600,1651]}`.
+ *
+ * There was a `facilitator_cohorts` table between the two, removed with
+ * the rest of the Postgres backend. It had already stopped mattering:
+ * once the platform endpoint was confirmed to scope by bearer token,
+ * the platform branch below returns before any local assignment is
+ * read, so the table only ever answered for deployments that have no
+ * platform integration — which is exactly the case the env var covers.
  *
  * When neither names the email, the answer depends on the auth posture:
  * in `open` mode (testing) everyone sees everything, which keeps local
@@ -33,7 +39,6 @@
 import { authMode } from "@/auth";
 import { ApiError } from "@/lib/api/client";
 import { COHORTS, findCohort, type CohortMeta } from "@/lib/cohorts";
-import { ensureSchema, getPool, hasDatabase } from "@/lib/server/db";
 import { hopeCohorts } from "@/lib/server/hope-cohorts";
 
 if (typeof window !== "undefined") {
@@ -72,25 +77,11 @@ function fromEnv(email: string): number[] | null {
     return ids.map(Number).filter(Number.isFinite);
 }
 
-async function fromDatabase(email: string): Promise<number[] | null> {
-    await ensureSchema();
-    const pool = await getPool();
-    const { rows } = await pool.query<{ cohort_id: number }>(
-        "SELECT cohort_id FROM facilitator_cohorts WHERE lower(email) = $1",
-        [email],
-    );
-    // No rows means "not configured here" rather than "assigned nothing",
-    // so the env fallback still gets a chance before we deny.
-    return rows.length > 0 ? rows.map((r) => r.cohort_id) : null;
-}
-
 export async function cohortsForFacilitator(
     email: string,
 ): Promise<Assignment> {
     const key = email.trim().toLowerCase();
-    const explicit = hasDatabase()
-        ? ((await fromDatabase(key)) ?? fromEnv(key))
-        : fromEnv(key);
+    const explicit = fromEnv(key);
 
     const platform = await hopeCohorts();
     if (platform) {

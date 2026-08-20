@@ -75,3 +75,9 @@ docs/
 
 # Local Playwright verification screenshots
 /*.png
+
+# Firebase service-account keys — never commit. The repo is public and
+# these grant access to a project holding participant-linked data.
+*-firebase-adminsdk-*.json
+serviceAccountKey.json
+firebase-service-account*.json

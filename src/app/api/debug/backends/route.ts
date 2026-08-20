@@ -1,5 +1,7 @@
 import { type NextRequest } from "next/server";
 
+import { firestoreConfig, hasFirestore } from "@/lib/server/firestore";
+
 /**
  * TEMPORARY diagnostic for the two backend services. Remove once the
  * risk and drafting proxies work on the deployment.
@@ -60,9 +62,22 @@ export async function GET(req: NextRequest) {
             HOPE_RISK_API_KEY: describeSecret(process.env.HOPE_RISK_API_KEY),
             HOPE_API_SECRET: describeSecret(process.env.HOPE_API_SECRET),
             HOPE_API_AUTH: process.env.HOPE_API_AUTH ?? null,
-            DATABASE_URL: describeSecret(process.env.DATABASE_URL),
             AUTH_MODE: process.env.AUTH_MODE ?? null,
+            // `parsed` is the field worth having: a base64 blob that is
+            // set but malformed is treated as unconfigured and only
+            // logged, so from outside this is the one way to tell that
+            // apart from not being set at all.
+            FIREBASE_SERVICE_ACCOUNT: {
+                ...describeSecret(process.env.FIREBASE_SERVICE_ACCOUNT),
+                parsed: hasFirestore(),
+            },
+            FIREBASE_DATABASE_ID: process.env.FIREBASE_DATABASE_ID ?? null,
         },
+        // Neither the project nor the database name is a secret, and a
+        // deployment pointed at the wrong project is the likeliest
+        // misconfiguration. The client email and key never appear here.
+        firebaseProjectId: firestoreConfig()?.projectId ?? null,
+        queueStateBackend: hasFirestore() ? "firestore" : "files",
         dropout: await probe(dropoutUrl, authHeaders),
         commentGen: await probe(commentGenUrl, authHeaders),
     });

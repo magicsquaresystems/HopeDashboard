@@ -3,17 +3,24 @@
  *
  * Two drivers behind one interface:
  *
- *   - **Postgres** when `DATABASE_URL` is set. Each operation is a single
- *     upsert or delete, so there is no read-modify-write to lose and no
- *     lock to hold — which is what makes it correct on Vercel, where
- *     concurrent requests land on different serverless instances that
- *     share nothing.
- *   - **JSON files** otherwise, so a fresh clone runs with no database.
- *     Single-process only; this is a development convenience, not a
- *     deployment target.
+ *   - **Firestore** when `FIREBASE_SERVICE_ACCOUNT` is set. Each
+ *     operation is a single addressed write or delete, so there is no
+ *     read-modify-write to lose and no lock to hold — which is what
+ *     makes it correct on Vercel, where concurrent requests land on
+ *     different serverless instances that share nothing.
+ *   - **JSON files** otherwise, so a fresh clone runs with no cloud
+ *     anything. Single-process only, and it cannot work on a serverless
+ *     host, whose filesystem is read-only: a development convenience,
+ *     not a deployment target.
  *
- * The interface is the swap point. If the platform team later wants this
- * in their own system, only `getQueueStateStore` changes.
+ * There was a third, Postgres, removed once Firestore landed. Two
+ * database backends where only one is ever configured means the next
+ * person has to work out which is live, and a half-configured
+ * deployment could quietly use the wrong one. It is in the history if
+ * it is ever wanted back; commented-out code would only rot.
+ *
+ * The interface is the swap point. If the platform team later wants
+ * this in their own system, only `getQueueStateStore` changes.
  */
 
 import fs from "node:fs";
@@ -27,7 +34,18 @@ import {
     type QueueOp,
 } from "@/lib/queue-state-shared";
 import { ApiError } from "@/lib/api/client";
-import { ensureSchema, getPool, hasDatabase } from "@/lib/server/db";
+import {
+    firestoreConfig,
+    getFirestoreDb,
+    hasFirestore,
+    mapFirestoreError,
+    type FirestoreConfig,
+} from "@/lib/server/firestore";
+import {
+    hydrateQueueState,
+    kindForOp,
+    type QueueStateRow,
+} from "@/lib/server/queue-state-rows";
 
 if (typeof window !== "undefined") {
     throw new Error("queue-state.ts must not be imported in client code");
@@ -43,118 +61,125 @@ export interface QueueStateStore {
 }
 
 export function getQueueStateStore(): QueueStateStore {
-    return hasDatabase() ? postgresStore : fileStore;
+    return hasFirestore() ? firestoreStore : fileStore;
 }
 
-/* ---------------------------------------------------------------- Postgres */
+/* --------------------------------------------------------------- Firestore */
 
 /**
- * Rows are (cohort, participant, kind) with kind ∈ snooze|dismiss|contact.
- * Modelling each marker as its own row is what keeps every operation a
- * one-statement write: no instance ever reads the cohort's state, edits
- * it in memory, and writes it back — the pattern that loses a concurrent
- * facilitator's action.
+ * Documents live at `queue_state/{cohortId}/markers/{participantId}:{kind}`.
+ *
+ * One document per marker, addressed directly, so every operation is a
+ * single `set` or `delete` that never reads the cohort first. A single
+ * document per cohort holding a map would be fewer reads and would also
+ * reintroduce exactly the lost-update race this shape exists to avoid.
+ *
+ * Scoping by path rather than by a `where` clause has two consequences
+ * worth stating: no composite index is needed, so there is nothing for
+ * an operator to create, and a wrong cohort id reads an empty
+ * collection rather than another cohort's markers.
  */
-const postgresStore: QueueStateStore = {
-    async get(cohortId) {
-        await ensureSchema();
-        const pool = await getPool();
-        const { rows } = await pool.query<{
-            participant_id: string;
-            kind: string;
-            by_email: string;
-            at_ms: string;
-            until_ms: string | null;
-            action: string | null;
-        }>(
-            "SELECT participant_id, kind, by_email, at_ms, until_ms, action" +
-                " FROM queue_state WHERE cohort_id = $1",
-            [cohortId],
+const COLLECTION = "queue_state";
+
+const NOT_CONFIGURED =
+    "Snoozing and contact markers are not available on this deployment: " +
+    "it is missing FIREBASE_SERVICE_ACCOUNT.";
+
+function markerId(participantId: string, kind: string): string {
+    // Encoded first: participant ids are opaque strings from the
+    // platform and may contain characters Firestore forbids in a
+    // document id, including "/". Encoding also escapes ":", so the
+    // separator can never appear in the left-hand side.
+    return `${encodeURIComponent(participantId)}:${kind}`;
+}
+
+/**
+ * The route validates `cohortId` with `Number.isFinite`, which a
+ * Postgres INTEGER column used to reject for us. Firestore would
+ * happily create a collection under a document named "1.5" or "1e+21".
+ */
+function requireConfig(cohortId: number): FirestoreConfig {
+    if (!Number.isSafeInteger(cohortId)) {
+        throw new ApiError(
+            400,
+            "cohortId must be a whole number",
+            "invalid_request",
         );
-        const state = emptyQueueState();
-        for (const r of rows) {
-            // BIGINT comes back as a string from node-postgres (it can
-            // exceed Number.MAX_SAFE_INTEGER in general); epoch-ms fits
-            // in a double comfortably, so a plain Number() is safe here.
-            const at = Number(r.at_ms);
-            if (r.kind === "snooze" && r.until_ms !== null) {
-                state.snoozes[r.participant_id] = {
-                    until: Number(r.until_ms),
-                    by: r.by_email,
-                    at,
+    }
+    const config = firestoreConfig();
+    if (!config) {
+        throw new ApiError(503, NOT_CONFIGURED, "queue_state_not_configured");
+    }
+    return config;
+}
+
+function markersRef(db: FirebaseFirestore.Firestore, cohortId: number) {
+    return db.collection(COLLECTION).doc(String(cohortId)).collection("markers");
+}
+
+const firestoreStore: QueueStateStore = {
+    async get(cohortId) {
+        const config = requireConfig(cohortId);
+        try {
+            const db = await getFirestoreDb();
+            const snap = await markersRef(db, cohortId).get();
+            const rows: QueueStateRow[] = snap.docs.map((d) => {
+                const v = d.data();
+                return {
+                    participantId: String(v.participantId ?? ""),
+                    kind: String(v.kind ?? ""),
+                    by: String(v.byEmail ?? ""),
+                    at: Number(v.atMs ?? 0),
+                    until: typeof v.untilMs === "number" ? v.untilMs : null,
+                    action: typeof v.action === "string" ? v.action : null,
                 };
-            } else if (r.kind === "dismiss") {
-                state.dismissals[r.participant_id] = { by: r.by_email, at };
-            } else if (r.kind === "contact") {
-                state.contacted[r.participant_id] = {
-                    by: r.by_email,
-                    at,
-                    action: r.action === "edit" ? "edit" : "accept",
-                };
-            }
+            });
+            return hydrateQueueState(rows, Date.now());
+        } catch (err) {
+            if (err instanceof ApiError) throw err;
+            mapFirestoreError(err, config);
         }
-        return pruneQueueState(state, Date.now());
     },
 
     async apply(cohortId, op, by) {
-        await ensureSchema();
-        const pool = await getPool();
-        const now = Date.now();
-        switch (op.op) {
-            case "snooze":
-                await pool.query(
-                    `INSERT INTO queue_state
-                        (cohort_id, participant_id, kind, by_email, at_ms, until_ms)
-                     VALUES ($1, $2, 'snooze', $3, $4, $5)
-                     ON CONFLICT (cohort_id, participant_id, kind) DO UPDATE
-                        SET by_email = EXCLUDED.by_email,
-                            at_ms    = EXCLUDED.at_ms,
-                            until_ms = EXCLUDED.until_ms`,
-                    [
-                        cohortId,
-                        op.participantId,
-                        by,
-                        now,
-                        now + op.days * 86_400_000,
-                    ],
-                );
-                break;
-            case "dismiss":
-                await pool.query(
-                    `INSERT INTO queue_state
-                        (cohort_id, participant_id, kind, by_email, at_ms)
-                     VALUES ($1, $2, 'dismiss', $3, $4)
-                     ON CONFLICT (cohort_id, participant_id, kind) DO UPDATE
-                        SET by_email = EXCLUDED.by_email, at_ms = EXCLUDED.at_ms`,
-                    [cohortId, op.participantId, by, now],
-                );
-                break;
-            case "contacted":
-                await pool.query(
-                    `INSERT INTO queue_state
-                        (cohort_id, participant_id, kind, by_email, at_ms, action)
-                     VALUES ($1, $2, 'contact', $3, $4, $5)
-                     ON CONFLICT (cohort_id, participant_id, kind) DO UPDATE
-                        SET by_email = EXCLUDED.by_email,
-                            at_ms    = EXCLUDED.at_ms,
-                            action   = EXCLUDED.action`,
-                    [cohortId, op.participantId, by, now, op.action],
-                );
-                break;
-            case "undoSnooze":
-            case "undoDismiss":
-                await pool.query(
-                    "DELETE FROM queue_state WHERE cohort_id = $1" +
-                        " AND participant_id = $2 AND kind = $3",
-                    [
-                        cohortId,
-                        op.participantId,
-                        op.op === "undoSnooze" ? "snooze" : "dismiss",
-                    ],
-                );
-                break;
+        const config = requireConfig(cohortId);
+        try {
+            const db = await getFirestoreDb();
+            const kind = kindForOp(op);
+            const ref = markersRef(db, cohortId).doc(
+                markerId(op.participantId, kind),
+            );
+            const now = Date.now();
+
+            if (op.op === "undoSnooze" || op.op === "undoDismiss") {
+                // Deleting a document that is not there resolves, which
+                // matches a DELETE affecting no rows.
+                await ref.delete();
+            } else {
+                // A full overwrite, not a merge: last write wins, and a
+                // stale `untilMs` cannot survive on a reused marker.
+                // Explicit nulls rather than omitted fields, so a stray
+                // `undefined` from a later change is a loud error rather
+                // than a silently dropped field.
+                await ref.set({
+                    cohortId,
+                    participantId: op.participantId,
+                    kind,
+                    byEmail: by,
+                    atMs: now,
+                    untilMs:
+                        op.op === "snooze" ? now + op.days * 86_400_000 : null,
+                    action: op.op === "contacted" ? op.action : null,
+                });
+            }
+        } catch (err) {
+            if (err instanceof ApiError) throw err;
+            mapFirestoreError(err, config);
         }
-        return this.get(cohortId);
+        // Re-read rather than compute locally: the caller installs this
+        // as the authoritative cache, so it must include the markers
+        // other facilitators wrote concurrently.
+        return firestoreStore.get(cohortId);
     },
 };
 
@@ -215,8 +240,8 @@ function writeFile(cohortId: number, state: CohortQueueState): void {
         throw new ApiError(
             503,
             "Snoozing and contact markers are not available on this " +
-                "deployment: they need DATABASE_URL to be set, because " +
-                "the server cannot write files.",
+                "deployment: they need FIREBASE_SERVICE_ACCOUNT to be set, " +
+                "because the server cannot write files.",
             "queue_state_not_configured",
         );
     }
