@@ -27,8 +27,33 @@ describe("toCohortMeta", () => {
             moduleId: 45,
             moduleName: "Business Studies",
             programmeLengthDays: 364,
+            programmeLengthKnown: true,
             effectiveStart: "2026-01-01T00:00:00Z",
         });
+    });
+
+    it("flags an absent end date rather than inventing a programme shape", () => {
+        // Live platform data: cohort 1223 arrives with `endDate: null`
+        // (an open-ended training module). The length still has to be a
+        // number for scoring, but the week selector must not draw six
+        // weeks and label the last one "end of programme" when nobody
+        // set a finish date.
+        const meta = toCohortMeta({ ...DOCUMENTED_ROW, endDate: null });
+        expect(meta?.programmeLengthDays).toBe(42);
+        expect(meta?.programmeLengthKnown).toBe(false);
+    });
+
+    it("treats a real end date as a known length", () => {
+        // Cohort 1731, live at the time of writing: 17 Jun to 26 Aug is
+        // ten weeks, and the platform does send the finish date for a
+        // scheduled programme.
+        const meta = toCohortMeta({
+            ...DOCUMENTED_ROW,
+            startDate: "2026-06-17T00:00:00",
+            endDate: "2026-08-26T00:00:00",
+        });
+        expect(meta?.programmeLengthDays).toBe(70);
+        expect(meta?.programmeLengthKnown).toBe(true);
     });
 
     it("adds the missing timezone to startDate", () => {

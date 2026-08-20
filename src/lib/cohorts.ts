@@ -25,6 +25,20 @@ export type CohortMeta = {
      * and anchored back to 56 by the service, which the week selector
      * discloses (see `scoringStore.isAnchoredWeek`). */
     programmeLengthDays: number;
+    /**
+     * False when `programmeLengthDays` is an assumption rather than a
+     * fact from the source.
+     *
+     * The platform sends `endDate: null` for cohorts with no scheduled
+     * finish, and the length then falls back to the six-week default.
+     * That default is a fine number to score against, but it must not be
+     * drawn as the programme's shape: the selector was rendering "W1..W6
+     * (end of programme)" for a cohort whose length nobody had set,
+     * which tells a facilitator something the platform never said.
+     * Defaults to true so existing registry entries and bundles, whose
+     * lengths ARE known, need no change.
+     */
+    programmeLengthKnown?: boolean;
     /** Cohort start (ISO). Together with `programmeLengthDays` this
      * decides which weeks have elapsed and are therefore scoreable —
      * on a live feed the selector must not offer a week the cohort

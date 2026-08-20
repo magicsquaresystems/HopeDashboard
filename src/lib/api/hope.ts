@@ -87,15 +87,22 @@ export function toCohortMeta(raw: unknown): CohortMeta | null {
     const startDate = typeof row.startDate === "string" ? row.startDate : "";
     if (!startDate) return null;
 
+    const endDate = typeof row.endDate === "string" ? row.endDate : "";
+    const programmeLengthDays = programmeLengthFrom(startDate, endDate);
+    // `endDate: null` is common on the platform for cohorts with no
+    // scheduled finish. The length still has to be a number for scoring,
+    // but the UI must not present the fallback as the programme's shape.
+    const programmeLengthKnown =
+        programmeLengthDays !== DEFAULT_PROGRAMME_LENGTH_DAYS ||
+        Boolean(endDate);
+
     return {
         id,
         code: String(row.cohortName ?? `Cohort ${id}`),
         moduleId: Number(row.moduleId) || 0,
         moduleName: String(row.moduleName ?? ""),
-        programmeLengthDays: programmeLengthFrom(
-            startDate,
-            typeof row.endDate === "string" ? row.endDate : "",
-        ),
+        programmeLengthDays,
+        programmeLengthKnown,
         effectiveStart: ensureUtc(startDate),
     };
 }

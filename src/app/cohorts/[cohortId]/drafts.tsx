@@ -408,18 +408,20 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
                 )}
                 {error && (() => {
                     const state = classifyGenerateError(error);
-                    const tone =
-                        state.tone === "offline" || state.tone === "busy"
-                            ? "border-muted bg-surface-2 text-text-2"
-                            : state.tone === "auth"
-                              ? "border-risk-md bg-risk-md-bg text-risk-md"
-                              : "border-risk-hi bg-risk-hi-bg text-risk-hi";
+                    // Neutral for every tone. The risk palette belongs to
+                    // participants, not to service status: a red card
+                    // here reads at a glance like a high-risk person
+                    // rather than a model that needs a retry. The title
+                    // carries the difference in words instead.
+                    const tone = "border-border bg-surface-2 text-text-2";
                     return (
                         <div
                             role="status"
                             className={`rounded-md border px-3 py-2 text-xs ${tone}`}
                         >
-                            <div className="font-medium">{state.title}</div>
+                            <div className="font-semibold text-text">
+                                {state.title}
+                            </div>
                             <p className="mt-1 leading-relaxed">{state.body}</p>
                             {state.detail && (
                                 <details className="mt-1.5 opacity-80">

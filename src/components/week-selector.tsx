@@ -30,9 +30,15 @@ import {
  */
 export function WeekSelector({
     programmeLengthDays,
+    programmeLengthKnown = true,
     effectiveStart,
 }: {
     programmeLengthDays: number;
+    /** False when the length is the six-week fallback rather than a real
+     *  finish date. The selector then shows only the weeks that have
+     *  actually elapsed, and says nothing about where the programme
+     *  ends, because nobody has told us. */
+    programmeLengthKnown?: boolean;
     /** Cohort start. Drives which weeks have elapsed; omit only if a
      *  caller genuinely has no start date, in which case every programme
      *  week is treated as available. */
@@ -48,16 +54,27 @@ export function WeekSelector({
     // cohort, so the value is fresh whenever it matters.
     const [now] = useState(() => Date.now());
 
-    const weeks = useMemo(
+    const allWeeks = useMemo(
         () => programmeWeeks(programmeLengthDays),
         [programmeLengthDays],
     );
     const maxWithData = useMemo(
         () =>
             effectiveStart === undefined
-                ? weeks.length
+                ? allWeeks.length
                 : weeksWithData(programmeLengthDays, effectiveStart, now),
-        [programmeLengthDays, effectiveStart, now, weeks.length],
+        [programmeLengthDays, effectiveStart, now, allWeeks.length],
+    );
+    // With no finish date from the source, the only weeks we can honestly
+    // name are the ones that have happened. Rendering the six-week
+    // fallback as the programme's shape would show a facilitator an end
+    // date nobody set.
+    const weeks = useMemo(
+        () =>
+            programmeLengthKnown
+                ? allWeeks
+                : allWeeks.slice(0, Math.max(1, maxWithData)),
+        [allWeeks, programmeLengthKnown, maxWithData],
     );
 
     // Pull the selection in when the cohort is shorter than the current
@@ -118,11 +135,22 @@ export function WeekSelector({
             </div>
             <span className="text-xs text-muted">
                 (
-                {week === lastWeek
+                {/* "end of programme" is a claim about where the
+                    programme finishes, so it is only safe when a finish
+                    date actually came from the source. */}
+                {programmeLengthKnown && week === lastWeek
                     ? "end of programme"
                     : `days 1–${week * 7}`}
                 )
             </span>
+            {!programmeLengthKnown && (
+                <span
+                    title="The platform has no finish date for this cohort, so only the weeks that have already run are shown."
+                    className="text-xs text-muted"
+                >
+                    programme length not set
+                </span>
+            )}
             {/* Weeks past the trained horizons still score — the service
                 anchors them to the last trained week and says so.
                 Surfacing it here keeps the number from reading as if the

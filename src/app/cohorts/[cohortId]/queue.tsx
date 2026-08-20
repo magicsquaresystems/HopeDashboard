@@ -26,7 +26,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronsLeft, ChevronsRight } from "lucide-react";
+import {
+    ChevronDown,
+    ChevronsLeft,
+    ChevronsRight,
+    CloudOff,
+} from "lucide-react";
 
 const PAGE_SIZE = 10;
 
@@ -226,17 +231,31 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                         role="group"
                         aria-label="Filter queue by status"
                     >
-                        {FILTERS.map((f) => (
-                            <Button
-                                key={f}
-                                size="sm"
-                                variant={filter === f ? "primary" : "ghost"}
-                                aria-pressed={filter === f}
-                                onClick={() => setFilter(f)}
-                            >
-                                {QUEUE_PILL_LABELS[f]}
-                            </Button>
-                        ))}
+                        {/* A segmented control, not a call to action. The
+                            primary variant's near-black filled the panel
+                            with the heaviest colour on the page for a
+                            selection the facilitator changes constantly;
+                            an accent tint marks the active filter without
+                            outshouting the risk badges beside it. */}
+                        {FILTERS.map((f) => {
+                            const isActive = filter === f;
+                            return (
+                                <button
+                                    key={f}
+                                    type="button"
+                                    aria-pressed={isActive}
+                                    onClick={() => setFilter(f)}
+                                    className={
+                                        "rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent " +
+                                        (isActive
+                                            ? "bg-accent-2 text-accent-ink"
+                                            : "text-muted hover:bg-surface-2 hover:text-text-2")
+                                    }
+                                >
+                                    {QUEUE_PILL_LABELS[f]}
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
             </CardHeader>
@@ -463,6 +482,14 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
  * failed query, and the raw message behind a disclosure — visible enough
  * for whoever operates the deployment, invisible until asked-for to the
  * facilitator working the list.
+ *
+ * Deliberately neutral rather than amber. On this page the warm colours
+ * are the risk semantics: amber means "check in soon" about a person.
+ * Spending that colour on "a service is down" makes the palette say two
+ * unrelated things at once, and puts an alarming block beside a list
+ * whose whole job is to draw the eye to genuinely worrying participants.
+ * A service being unavailable is information, not a risk tier, so it
+ * reads as information: surface tone, one muted icon, ordinary text.
  */
 function LoadErrorNotice({
     title,
@@ -478,26 +505,33 @@ function LoadErrorNotice({
     return (
         <div
             role="status"
-            className="space-y-2 rounded-md border border-risk-md bg-risk-md-bg px-3 py-2.5 text-xs"
+            className="space-y-2.5 rounded-lg border border-border bg-surface-2 px-3 py-3 text-xs"
         >
-            <div>
-                <p className="font-medium text-risk-md">{title}</p>
-                <p className="mt-1 leading-relaxed text-text-2">{body}</p>
+            <div className="flex gap-2">
+                <CloudOff
+                    className="mt-0.5 h-4 w-4 shrink-0 text-muted"
+                    aria-hidden
+                />
+                <div className="min-w-0">
+                    <p className="font-semibold text-text">{title}</p>
+                    <p className="mt-1 leading-relaxed text-text-2">{body}</p>
+                </div>
             </div>
             <Button
                 type="button"
                 variant="secondary"
                 size="sm"
                 onClick={onRetry}
+                className="w-full"
             >
                 Try again
             </Button>
             {detail ? (
                 <details className="text-muted">
-                    <summary className="cursor-pointer select-none">
+                    <summary className="cursor-pointer select-none hover:text-text-2">
                         Technical details
                     </summary>
-                    <p className="mt-1 break-all font-mono text-[10px] leading-relaxed">
+                    <p className="mt-1 break-all font-mono text-[10px] leading-relaxed text-muted">
                         {detail}
                     </p>
                 </details>

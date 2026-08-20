@@ -111,28 +111,35 @@ export function Topbar({ cohort }: TopbarProps) {
                 />
                 {/* Session counter is local state — never in flight. */}
                 <StatPill value={sentThisSession} label="contacted this session" />
-                {/* Small and off to the side on purpose: it orients
-                    without inviting a mid-draft exit. */}
-                <HopeMoveLink
-                    label="Hope Move"
-                    className="text-xs"
+                {/* Leaving the app and identifying yourself are different
+                    jobs, so they get a divider rather than sitting in one
+                    undifferentiated row. The back link keeps the arrow
+                    (it goes somewhere), the account does not. */}
+                <span
+                    aria-hidden
+                    className="mx-0.5 hidden h-5 w-px bg-border sm:block"
                 />
+                <HopeMoveLink label="Hope Move" className="text-xs" />
                 {who && (
-                    <div className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1.5">
+                    <div className="flex items-center gap-2 rounded-md border border-border bg-surface py-1 pl-2.5 pr-1">
                         <span
-                            className="max-w-[14ch] truncate text-xs text-text-2"
+                            className="max-w-[16ch] truncate text-xs text-text-2"
                             title={session?.user?.email ?? undefined}
                         >
                             {who}
                         </span>
+                        {/* Labelled, not a bare glyph: an icon-only door
+                            out of a clinical tool is one mis-click from
+                            ending someone's session mid-draft. */}
                         <button
                             type="button"
                             onClick={() => signOut({ callbackUrl: "/login" })}
-                            className="text-muted transition-colors hover:text-text"
+                            className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-text"
                             title="Sign out"
-                            aria-label="Sign out"
                         >
                             <LogOut className="h-3.5 w-3.5" aria-hidden />
+                            <span className="hidden sm:inline">Sign out</span>
+                            <span className="sr-only sm:hidden">Sign out</span>
                         </button>
                     </div>
                 )}
