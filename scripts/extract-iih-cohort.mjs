@@ -161,6 +161,11 @@ export function buildProfileLookup(up) {
                 }));
             out.set(profile.userId, {
                 bio: profile.bio ?? "",
+                // The name the platform itself shows on its Members page
+                // and against a post. It is what a facilitator recognises
+                // and what they will search for when they go back to Hope
+                // to reply, so it is the name to display.
+                screenName: profile.screenName ?? null,
                 firstName: profile.firstName ?? null,
                 lastName: profile.lastName ?? null,
                 interview: items,
@@ -526,7 +531,16 @@ export function buildCohortBundle(
 
         return {
             participant_id: String(u.userId),
-            displayName: `P${i + 1}`,
+            // A real name when the source gives us one, the positional
+            // alias when it does not. The alias is not a privacy measure
+            // — it is what is left when a bundle carries no profiles, as
+            // the extracted IIH research bundles do. Live platform
+            // cohorts do carry them, and a facilitator cannot act on
+            // "P16": they have to find that person on Hope to reply.
+            displayName:
+                profile?.screenName?.trim() ||
+                profile?.firstName?.trim() ||
+                `P${i + 1}`,
             bio: shortBio(
                 profile,
                 `Joined ${meta.code}. No profile bio submitted yet.`,

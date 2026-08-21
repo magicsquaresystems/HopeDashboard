@@ -5,7 +5,11 @@ import { createHopeClient, toPlatformActivityType } from "@/lib/api/hope";
 import { hopeConfig } from "@/lib/auth/hope-exchange";
 import { hopeSession } from "@/lib/auth/hope-session";
 import { requireFacilitatorEmail } from "@/lib/auth/facilitator";
-import { assertCohortAccess } from "@/lib/server/assignments";
+import { assertCohortAccess, resolveCohort } from "@/lib/server/assignments";
+import {
+    isPostingAllowedFor,
+    postingPolicy,
+} from "@/lib/server/posting-policy";
 import { withApiErrors } from "../../_errors";
 
 /**
@@ -26,13 +30,28 @@ import { withApiErrors } from "../../_errors";
  *     HOPE_ENABLE_POST_COMMENT=1
  *
  * Without it the route answers 503 `posting_disabled`. With it, every
- * request still has to clear a session, cohort assignment, and a
- * recognised activity type.
+ * request still has to clear a session, a cohort allowlist, cohort
+ * assignment, and a recognised activity type.
+ *
+ * Two more environment variables shape this, both in
+ * `lib/server/posting-policy.ts`:
+ *
+ *   `HOPE_POST_COMMENT_COHORTS` names the cohorts that may receive a
+ *   reply, by id or by code, and is REQUIRED whenever posting is
+ *   enabled — the flag alone opens nothing. Being assigned to a cohort
+ *   is not permission to post into it: the account this is tested with
+ *   is assigned to around twenty-five cohorts, most of them live.
+ *
+ *   `HOPE_POST_COMMENT_DRY_RUN=1` runs every check and builds the real
+ *   payload, then logs it and returns `{ status: "dry_run" }` instead of
+ *   calling the platform. It is how the whole path is exercised before
+ *   anything reaches a participant.
  */
 export const POST = withApiErrors(async (req: NextRequest) => {
     const email = await requireFacilitatorEmail();
 
-    if (process.env.HOPE_ENABLE_POST_COMMENT !== "1") {
+    const policy = postingPolicy();
+    if (!policy.enabled) {
         throw new ApiError(
             503,
             "Publishing replies to participants is not enabled on this deployment",
@@ -51,9 +70,28 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     if (!Number.isFinite(cohortId)) {
         throw new ApiError(400, "cohortId is required", "invalid_request");
     }
-    // The facilitator must be on this cohort. Checked here rather than
-    // trusted from the body: the client picks the cohort, and a client
-    // can be wrong or hostile.
+    // Before the assignment check, and long before the platform call:
+    // being assigned to a cohort is not permission to post into it. The
+    // account used for testing is assigned to roughly twenty-five
+    // cohorts, most of them live courses with real participants.
+    const cohort = await resolveCohort(cohortId);
+    if (!isPostingAllowedFor(policy, { id: cohortId, code: cohort?.code })) {
+        console.warn(
+            `hope comment refused: cohort=${cohortId} ` +
+                `code=${cohort?.code ?? "unknown"} not in ` +
+                `HOPE_POST_COMMENT_COHORTS, by=${email}`,
+        );
+        throw new ApiError(
+            403,
+            "Sending replies to Hope is not switched on for this cohort. " +
+                "You can still copy the reply and paste it into Hope.",
+            "posting_not_allowed_for_cohort",
+        );
+    }
+
+    // The facilitator must also be on this cohort. Checked here rather
+    // than trusted from the body: the client picks the cohort, and a
+    // client can be wrong or hostile.
     await assertCohortAccess(email, cohortId);
 
     const recordId = Number(body.recordId);
@@ -89,6 +127,19 @@ export const POST = withApiErrors(async (req: NextRequest) => {
             "This session is not linked to Hope",
             "hope_not_linked",
         );
+    }
+
+    if (policy.dryRun) {
+        // Every gate has passed and this is the exact payload that would
+        // go out. Stopping here exercises the whole path — the button,
+        // the confirm, the route, the validation — without a message
+        // reaching anyone, which is how this feature gets tested at all.
+        console.info(
+            `hope comment DRY RUN (not sent): cohort=${cohortId} ` +
+                `activity=${activityType}#${recordId} by=${email} ` +
+                `chars=${comment.length}`,
+        );
+        return NextResponse.json({ status: "dry_run" });
     }
 
     await createHopeClient({

@@ -65,37 +65,11 @@ import type {
     ParticipantHistory,
     PredictionResponse,
 } from "@/lib/api/dropout";
+import { proxyFailure } from "@/lib/api/proxy-error";
 import { BUSY_CODE } from "@/app/cohorts/[cohortId]/drafts-helpers";
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
 const FIVE_MIN = 5 * 60 * 1000;
-
-/**
- * The readable half of a failed proxy response.
- *
- * The proxy layer answers `{ detail, code }`, and pasting that object
- * into the message put `{"detail":"…","code":"…"}` on screen in front of
- * a facilitator. The sentence inside it is the part written for a
- * person, so lift it out and drop the envelope. A non-JSON body (a
- * gateway's HTML error page, say) has no sentence to lift, so it falls
- * back to the raw text.
- *
- * The status stays in the caller's message either way:
- * `classifyGenerateError` buckets failures by substring-matching it.
- */
-async function failureDetail(res: Response): Promise<string> {
-    const raw = await res.text().catch(() => "");
-    if (!raw) return res.statusText;
-    try {
-        const parsed = JSON.parse(raw) as { detail?: unknown };
-        if (typeof parsed.detail === "string" && parsed.detail.trim()) {
-            return parsed.detail;
-        }
-    } catch {
-        /* not JSON — the raw text is the best we have */
-    }
-    return raw;
-}
 
 async function postJSON<T>(path: string, body: unknown): Promise<T> {
     const res = await fetch(path, {
@@ -104,7 +78,7 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
         body: JSON.stringify(body),
     });
     if (!res.ok) {
-        throw new Error(`${path} failed: ${res.status} ${await failureDetail(res)}`);
+        throw await proxyFailure(path, res);
     }
     return res.json() as Promise<T>;
 }
@@ -112,7 +86,7 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
 async function getJSON<T>(path: string): Promise<T> {
     const res = await fetch(path);
     if (!res.ok) {
-        throw new Error(`${path} failed: ${res.status} ${await failureDetail(res)}`);
+        throw await proxyFailure(path, res);
     }
     return res.json() as Promise<T>;
 }

@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 
+import { proxyFailure } from "@/lib/api/proxy-error";
 import {
     applyOp,
     emptyQueueState,
@@ -33,10 +34,9 @@ export function useQueueState(cohortId: number) {
     return useQuery({
         queryKey: queueStateKey(cohortId),
         queryFn: async (): Promise<CohortQueueState> => {
-            const res = await fetch(`/api/queue-state?cohortId=${cohortId}`);
-            if (!res.ok) {
-                throw new Error(`queue-state failed: ${res.status}`);
-            }
+            const path = `/api/queue-state?cohortId=${cohortId}`;
+            const res = await fetch(path);
+            if (!res.ok) throw await proxyFailure(path, res);
             return res.json();
         },
         // An unreachable store shouldn't blank the queue's hidden list;
@@ -60,10 +60,7 @@ export function useQueueOp(cohortId: number) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ cohortId, ...op }),
             });
-            if (!res.ok) {
-                const detail = await res.text().catch(() => "");
-                throw new Error(`queue-state failed: ${res.status} ${detail}`);
-            }
+            if (!res.ok) throw await proxyFailure("/api/queue-state", res);
             return res.json();
         },
         onMutate: async (op) => {

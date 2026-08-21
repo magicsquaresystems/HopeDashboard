@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 
+import { proxyFailure } from "@/lib/api/proxy-error";
 import type { CohortBundle } from "@/lib/server/cohort-data";
 
 const THIRTY_SECONDS = 30 * 1000;
@@ -34,26 +35,7 @@ export function useCohortBundle(cohortId?: number) {
                 : "/api/cohort-bundle";
             const res = await fetch(url);
             if (res.status === 204) return null;
-            if (!res.ok) {
-                // `statusText` is the empty string over HTTP/2, which is
-                // what production serves, so this used to throw
-                // "cohort-bundle failed: 403 " and the queue's technical
-                // disclosure had nothing in it. The route answers
-                // `{ detail, code }`; prefer the sentence.
-                const raw = await res.text().catch(() => "");
-                let detail = raw || res.statusText;
-                try {
-                    const parsed = JSON.parse(raw) as { detail?: unknown };
-                    if (typeof parsed.detail === "string" && parsed.detail) {
-                        detail = parsed.detail;
-                    }
-                } catch {
-                    /* not JSON — keep the raw text */
-                }
-                throw new Error(
-                    `cohort-bundle failed: ${res.status} ${detail}`,
-                );
-            }
+            if (!res.ok) throw await proxyFailure(url, res);
             return (await res.json()) as CohortBundle;
         },
         staleTime: THIRTY_SECONDS,
