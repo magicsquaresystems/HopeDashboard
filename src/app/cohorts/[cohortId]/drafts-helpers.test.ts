@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+    canPublishReply,
     classifyGenerateError,
     formatModelLabel,
+    friendlyPublishError,
     pickReplyTarget,
+    publishBlockedReason,
 } from "./drafts-helpers";
 import type { ParticipantHistory } from "@/lib/api/dropout";
 
@@ -233,5 +236,146 @@ describe("formatModelLabel", () => {
         expect(formatModelLabel("stub-disabled")).toBe("stub (kill-switch)");
         expect(formatModelLabel("safety-block")).toBe("safety block");
         expect(formatModelLabel("error-fallback")).toBe("fallback");
+    });
+});
+
+describe("canPublishReply", () => {
+    const target = {
+        text: "I will walk to the end of the road",
+        activityType: "GoalSetting" as const,
+        typeKnown: true,
+        daysAgo: 1,
+        isDiscussion: false,
+        activityId: 4321,
+    };
+
+    it("allows the happy case", () => {
+        expect(
+            canPublishReply({ publishEnabled: true, writeMode: false, target }),
+        ).toBe(true);
+    });
+
+    it("refuses when the deployment or cohort is not cleared for posting", () => {
+        expect(
+            canPublishReply({ publishEnabled: false, writeMode: false, target }),
+        ).toBe(false);
+    });
+
+    it("refuses a hand-written reply", () => {
+        // Write-my-own has no draft set behind it; the send path is for
+        // a generated draft the research record can account for.
+        expect(
+            canPublishReply({ publishEnabled: true, writeMode: true, target }),
+        ).toBe(false);
+    });
+
+    it("refuses a forum post, which has no record to attach to", () => {
+        expect(
+            canPublishReply({
+                publishEnabled: true,
+                writeMode: false,
+                target: { ...target, isDiscussion: true },
+            }),
+        ).toBe(false);
+    });
+
+    it("refuses when the activity type was guessed rather than known", () => {
+        // pickReplyTarget defaults an unknown type to GoalSetting so
+        // drafting has something to send. Publishing files the reply
+        // against a record type, so the guess would attach a
+        // facilitator's words to the wrong entry.
+        expect(
+            canPublishReply({
+                publishEnabled: true,
+                writeMode: false,
+                target: { ...target, typeKnown: false },
+            }),
+        ).toBe(false);
+    });
+
+    it("refuses when there is no activity id", () => {
+        expect(
+            canPublishReply({
+                publishEnabled: true,
+                writeMode: false,
+                target: { ...target, activityId: undefined },
+            }),
+        ).toBe(false);
+        expect(
+            canPublishReply({ publishEnabled: true, writeMode: false, target: null }),
+        ).toBe(false);
+    });
+});
+
+describe("publishBlockedReason", () => {
+    const base = {
+        text: "x",
+        activityType: "GoalSetting" as const,
+        typeKnown: true,
+        daysAgo: 1,
+        isDiscussion: false,
+        activityId: 1,
+    };
+
+    it("explains a forum post and points at the thread", () => {
+        const r = publishBlockedReason({
+            publishEnabled: true,
+            writeMode: false,
+            target: { ...base, isDiscussion: true },
+        });
+        expect(r).toMatch(/forum/i);
+        expect(r).toMatch(/Hope/);
+    });
+
+    it("says nothing when sending is simply available", () => {
+        expect(
+            publishBlockedReason({ publishEnabled: true, writeMode: false, target: base }),
+        ).toBeNull();
+    });
+
+    it("says nothing when the deployment has posting switched off", () => {
+        // An operator's business, not something to narrate on every draft.
+        expect(
+            publishBlockedReason({ publishEnabled: false, writeMode: false, target: base }),
+        ).toBeNull();
+    });
+});
+
+describe("friendlyPublishError", () => {
+    it("never promises a failed send was not delivered", () => {
+        // The platform may have accepted it before the connection
+        // dropped. "Try again" would invite a duplicate under a
+        // participant's post.
+        const e = friendlyPublishError("/api/proxy/hope/comment failed: 502 upstream");
+        expect(e.body).toMatch(/may or may not/i);
+        expect(e.body).toMatch(/check/i);
+    });
+
+    it("maps every gate the route can refuse with", () => {
+        for (const code of [
+            "posting_not_allowed_for_cohort",
+            "posting_disabled",
+            "hope_not_linked",
+            "hope_session_expired",
+            "invalid_request",
+        ]) {
+            const e = friendlyPublishError(`/api/proxy/hope/comment failed: 403 ${code}`);
+            expect(e.title.length).toBeGreaterThan(0);
+            expect(e.body.length).toBeGreaterThan(0);
+        }
+    });
+
+    it("keeps route paths, env names and status codes out of the copy", () => {
+        for (const msg of [
+            "/api/proxy/hope/comment failed: 503 posting_disabled",
+            "/api/proxy/hope/comment failed: 400 invalid_request",
+            "/api/proxy/hope/comment failed: 502 upstream",
+        ]) {
+            const { title, body } = friendlyPublishError(msg);
+            const text = `${title} ${body}`;
+            expect(text).not.toMatch(/\/api\//);
+            expect(text).not.toMatch(/HOPE_[A-Z_]+/);
+            expect(text).not.toMatch(/\b(400|401|403|502|503)\b/);
+        }
     });
 });

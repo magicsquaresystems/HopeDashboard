@@ -132,6 +132,34 @@ export function useCohortBatch(
     });
 }
 
+/**
+ * Publish a facilitator's reply to the participant's post on Hope.
+ *
+ * The only mutation in this app a participant can see, and the only one
+ * with no undo.
+ *
+ * `retry: 0` is the important line. The default retry would re-send a
+ * reply whose first attempt timed out *after* the platform accepted it,
+ * putting two copies of the same message under someone's post. A
+ * failure the facilitator can see and decide about beats a duplicate
+ * they cannot take back.
+ */
+export function usePublishComment() {
+    return useMutation({
+        mutationFn: (body: {
+            cohortId: number;
+            activityType: string;
+            recordId: number;
+            comment: string;
+        }) =>
+            postJSON<{ status: "published" | "dry_run" }>(
+                "/api/proxy/hope/comment",
+                body,
+            ),
+        retry: 0,
+    });
+}
+
 export function useParticipantPrediction(
     history: ParticipantHistory | null,
     cohortId: number | string | null = null,

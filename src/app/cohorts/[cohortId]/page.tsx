@@ -9,6 +9,10 @@ import {
     isAssigned,
     resolveCohort,
 } from "@/lib/server/assignments";
+import {
+    isPostingAllowedFor,
+    postingPolicy,
+} from "@/lib/server/posting-policy";
 import { CohortSessionReset } from "@/components/cohort-session-reset";
 import { NoticeBar } from "@/components/notice-bar";
 import { Topbar } from "@/components/topbar";
@@ -49,6 +53,17 @@ export default async function CohortDashboard({
         notFound();
     }
 
+    // Resolved on the server, per cohort, and handed down as a prop.
+    // The Send button must never appear for a cohort the route would
+    // refuse: a button that exists only to explain itself is worse than
+    // no button. `hopeLinked` is checked too — a hand-off session has no
+    // platform credentials, so it could only ever produce a 503.
+    const publishEnabled =
+        isPostingAllowedFor(postingPolicy(), {
+            id: cohort.id,
+            code: cohort.code,
+        }) && session?.hopeLinked === true;
+
     return (
         <main className="flex w-full flex-1 flex-col">
             {/* The page's only h1. Visually redundant — the topbar already
@@ -79,7 +94,9 @@ export default async function CohortDashboard({
                 detail={
                     <Detail cohortId={cohort.id} cohortCode={cohort.code} />
                 }
-                drafts={<Drafts cohort={cohort} />}
+                drafts={
+                    <Drafts cohort={cohort} publishEnabled={publishEnabled} />
+                }
             />
         </main>
     );

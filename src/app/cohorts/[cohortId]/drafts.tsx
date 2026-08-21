@@ -31,6 +31,7 @@ import { getProfile } from "@/lib/profile";
 import { useCohortBundle } from "@/lib/hooks/useCohortBundle";
 import { useQueueOp } from "@/lib/hooks/useQueueState";
 import { bundleToHistory, renderThreadContext } from "@/lib/realCohort";
+import { usePublishComment } from "@/lib/hooks/api";
 import {
     scoreAtDay as scoreAtDayForWeek,
     useScoringStore,
@@ -61,15 +62,31 @@ const PERSONA_TAB_LABEL: Record<Persona, string> = {
 // Pure helpers extracted to ./drafts-helpers.ts so Vitest can import
 // them in a Node environment without dragging in the React/Next tree.
 import {
+    canPublishReply,
     classifyGenerateError,
     firstContactTemplate,
     formatModelLabel,
     pickReplyTarget,
+    publishBlockedReason,
 } from "./drafts-helpers";
 
-export function Drafts({ cohort }: { cohort: CohortMeta }) {
+export function Drafts({
+    cohort,
+    publishEnabled = false,
+}: {
+    cohort: CohortMeta;
+    /** Resolved on the server for THIS cohort — the deployment allows
+     *  posting, this cohort is allowlisted, and the session is linked to
+     *  the platform. Defaults false so a caller that forgets to pass it
+     *  gets copy-only rather than a live Send. */
+    publishEnabled?: boolean;
+}) {
     const selectedId = useUiStore((s) => s.selectedParticipantId);
     const bundle = useCohortBundle(cohort.id);
+    // With the other hooks, above every early return: the drafts column
+    // returns placeholders when nobody is selected, and a hook called
+    // after that renders in a different order on the next pass.
+    const publish = usePublishComment();
     const scoreAtWeek = useScoringStore((s) => s.scoreAtWeek);
     const scoreAt = scoreAtDayForWeek(scoreAtWeek);
     const history = useMemo(() => {
@@ -262,6 +279,32 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
     const profile = getProfile(selectedId, bundle.data ?? null);
     const displayName = profile.displayName;
     const firstName = displayName.split(/\s+/)[0] ?? displayName;
+
+    const gate = { publishEnabled, writeMode, target: recentPost };
+    const canPublish = canPublishReply(gate);
+    const blockedReason = publishBlockedReason(gate);
+
+    /**
+     * Send a reply to the participant's post on Hope.
+     *
+     * Re-checks the gate rather than trusting the button: the target can
+     * change under a card while a confirm strip is open — switching the
+     * selected post is one click away — and this is the one action with
+     * no undo.
+     *
+     * Deliberately does NOT call `recordUse`. DraftCard fires that
+     * through its own latch, so there is exactly one research record per
+     * draft whichever action happened first.
+     */
+    async function onPublish(text: string) {
+        if (!canPublish || !recentPost?.activityId) return;
+        await publish.mutateAsync({
+            cohortId: cohort.id,
+            activityType: recentPost.activityType,
+            recordId: recentPost.activityId,
+            comment: text,
+        });
+    }
 
     return (
         <Card className="flex flex-col">
@@ -520,6 +563,7 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
                             <DraftCard
                                 key={`writemode-${selectedId}`}
                                 draft={blankDraft}
+                                canPublish={false}
                                 onThumb={() => {
                                     /* no AI to rate */
                                 }}
@@ -605,6 +649,9 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
                                 regenerating={generate.isPending}
                                 pending={event.isPending}
                                 context={ctx}
+                                canPublish={canPublish}
+                                onPublish={onPublish}
+                                publishBlockedReason={blockedReason}
                                 recipientName={displayName}
                                 participantId={Number(
                                     String(selectedId).replace(/[^0-9]/g, "") || "0",

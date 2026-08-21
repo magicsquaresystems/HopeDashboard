@@ -282,3 +282,118 @@ export function firstContactTemplate(firstName: string | null): string {
         `programme, I'm happy to help in whatever way works for you.`
     );
 }
+
+/** Everything that decides whether a reply may be sent to Hope. */
+export type PublishGate = {
+    /** Server-side policy resolved on the page: the deployment allows
+     *  posting AND this cohort is on the allowlist AND the session is
+     *  linked to the platform. */
+    publishEnabled: boolean;
+    /** The facilitator is writing their own reply rather than using a
+     *  generated one. */
+    writeMode: boolean;
+    target: ReplyTarget | null;
+};
+
+/**
+ * Whether the Send button may appear at all.
+ *
+ * Every condition here is a way of posting to the wrong place, and the
+ * button is hidden rather than disabled-with-an-excuse for the ones a
+ * facilitator cannot fix.
+ *
+ * `typeKnown` is the subtle one. `pickReplyTarget` defaults an unknown
+ * activity type to "GoalSetting" so /generate has something to send, and
+ * that default is harmless for drafting — but publishing files the reply
+ * against a record type, so a wrong guess attaches a facilitator's words
+ * to the wrong entry in someone's health record. Drafting may guess;
+ * publishing may not.
+ */
+export function canPublishReply({
+    publishEnabled,
+    writeMode,
+    target,
+}: PublishGate): boolean {
+    if (!publishEnabled || writeMode || !target) return false;
+    // Forum posts have no per-post id we can address, so a reply would
+    // have nowhere to attach. Copy remains, and the thread is one click
+    // away on Hope.
+    if (target.isDiscussion) return false;
+    if (!target.typeKnown) return false;
+    return target.activityId != null;
+}
+
+/**
+ * Why Send is absent, in a sentence a facilitator can act on.
+ *
+ * `null` when there is nothing to explain — either sending is available
+ * or the deployment has posting switched off entirely, which is an
+ * operator's business and not something to narrate on every draft.
+ */
+export function publishBlockedReason({
+    publishEnabled,
+    writeMode,
+    target,
+}: PublishGate): string | null {
+    if (!publishEnabled || !target || writeMode) return null;
+    if (target.isDiscussion) {
+        return "Replies to forum posts can't be sent from here yet. Copy this reply and post it in the thread on Hope.";
+    }
+    if (!target.typeKnown) {
+        return "This post doesn't say what kind of activity it is, so a reply can't be filed against it. Copy the reply and post it on Hope.";
+    }
+    if (target.activityId == null) {
+        return "This post has no record we can attach a reply to. Copy the reply and post it on Hope.";
+    }
+    return null;
+}
+
+/**
+ * Facilitator-facing translation of a failed send.
+ *
+ * The 502/timeout case is deliberately not reassuring. The platform may
+ * have accepted the reply before the connection dropped, so "try again"
+ * would invite a duplicate landing under a participant's post — two
+ * copies of the same message from their facilitator.
+ */
+export function friendlyPublishError(message: string): {
+    title: string;
+    body: string;
+} {
+    const m = message.toLowerCase();
+
+    if (m.includes("posting_not_allowed_for_cohort")) {
+        return {
+            title: "Sending isn't switched on for this cohort",
+            body: "Replies can't be sent to this cohort yet. Copy the reply and post it on Hope, and tell the programme team.",
+        };
+    }
+    if (m.includes("posting_disabled")) {
+        return {
+            title: "Sending isn't switched on",
+            body: "This deployment can't send replies yet. Copy the reply and post it on Hope.",
+        };
+    }
+    if (m.includes("hope_not_linked")) {
+        return {
+            title: "This session can't post to Hope",
+            body: "Open the Insights Hub again from your Facilitator Dashboard, then try once more.",
+        };
+    }
+    if (m.includes("hope_session_expired") || m.includes(" 401")) {
+        return {
+            title: "Your session with Hope has ended",
+            body: "Open the Insights Hub again from your Facilitator Dashboard to carry on.",
+        };
+    }
+    if (m.includes("invalid_request") || m.includes(" 400")) {
+        return {
+            title: "This reply couldn't be filed",
+            body: "Something about this post stopped the reply attaching to it. Copy the reply and post it on Hope.",
+        };
+    }
+    return {
+        title: "Hope didn't confirm this reply",
+        body: "It may or may not have been posted. Check the participant's post on Hope before sending again — or copy the reply and paste it there.",
+    };
+}

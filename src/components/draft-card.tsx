@@ -7,6 +7,7 @@ import {
     Info,
     Loader2,
     RefreshCcw,
+    Send,
     Sparkles,
     ThumbsDown,
     ThumbsUp,
@@ -17,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useCopyToClipboard } from "@/lib/hooks/useCopyToClipboard";
 import { usePolishText } from "@/lib/hooks/api";
+import { friendlyPublishError } from "@/app/cohorts/[cohortId]/drafts-helpers";
 import { cn } from "@/lib/utils";
 import type { Draft } from "@/lib/api/commentGen";
 
@@ -42,14 +44,17 @@ import type { Draft } from "@/lib/api/commentGen";
  *    "Helpful?" prompt.
  *  - "What this draft is based on" disclosure stays below
  *
- * On "Copy reply" rather than "Send": this dashboard cannot deliver a
- * message to a participant yet — the platform's publish endpoint exists
- * but is switched off pending a safe test cohort. The previous Send
- * button recorded the research event and marked the participant
- * contacted while delivering nothing, which is a lie with clinical
- * consequences. Copying is an action that genuinely happens, so it is
- * what the button claims — and `onUse` (the research record + contacted
- * marker) fires only after the clipboard write actually succeeds.
+ * Copy is always available; Send appears only when the caller says this
+ * reply may be published (`canPublish`), which is resolved server-side
+ * per cohort. An earlier Send button recorded the research event and
+ * marked the participant contacted while delivering nothing — a lie
+ * with clinical consequences — so both buttons now claim only what
+ * actually happened: `onUse` fires after the clipboard write succeeds,
+ * and Send reports "Sent to Hope" only after the platform confirms.
+ *
+ * Send asks first. It is the one irreversible action in this app: the
+ * participant may be notified, and there is no unsend. The confirm strip
+ * names the person and says plainly that it cannot be taken back.
  */
 
 export type DraftContext = {
@@ -79,6 +84,13 @@ type DraftCardProps = {
      *  the comment-gen /text/polish endpoint). When omitted the Polish
      *  button is hidden — polish is a participant-scoped request. */
     participantId?: number;
+    /** Whether this reply may be sent to Hope. Decided by the caller
+     *  from a server-resolved policy; the card never infers it. */
+    canPublish?: boolean;
+    /** Publish the reply. Rejects on failure so the card can say so. */
+    onPublish?: (text: string) => Promise<unknown>;
+    /** Why Send is absent, when that is worth explaining. */
+    publishBlockedReason?: string | null;
 };
 
 // How long the "Restore my original" affordance stays visible after a
@@ -104,6 +116,9 @@ export function DraftCard({
     context,
     recipientName,
     participantId,
+    canPublish = false,
+    onPublish,
+    publishBlockedReason,
 }: DraftCardProps) {
     const [text, setText] = useState(draft.body);
     const [edited, setEdited] = useState(false);
@@ -112,6 +127,19 @@ export function DraftCard({
     const clipboard = useCopyToClipboard();
     /** Whether this draft has already been recorded as used. */
     const usedRef = useRef(false);
+
+    /**
+     * Send state. `idle` → `confirming` → `sending` → `sent` | `failed`.
+     *
+     * `sent` is terminal for this card: the card is keyed by draft id, so
+     * choosing another draft or another participant mounts a fresh one.
+     * There is no path back from `sent` because there is no unsend.
+     */
+    const [sendState, setSendState] = useState<
+        "idle" | "confirming" | "sending" | "sent" | "failed"
+    >("idle");
+    const [sendError, setSendError] = useState<string | null>(null);
+    const sendRef = useRef<HTMLButtonElement>(null);
 
     // Polish-with-AI state. `polishShadow` holds the pre-polish text so a
     // facilitator can roll back if the rephrased version isn't what they
@@ -171,6 +199,33 @@ export function DraftCard({
         onThumb(String(draft.draft_id), label);
     }
 
+    /**
+     * Send, after the confirm strip.
+     *
+     * `onUse` fires through the SAME latch the copy path uses, so a
+     * draft that was copied and then sent files one research record, not
+     * two — and whichever happened first is the one recorded.
+     */
+    async function clickSend() {
+        if (!onPublish || sendState === "sending") return;
+        setSendState("sending");
+        setSendError(null);
+        try {
+            await onPublish(text);
+            setSendState("sent");
+            if (!usedRef.current) {
+                usedRef.current = true;
+                onUse(String(draft.draft_id), text, edited ? "edit" : "accept");
+            }
+        } catch (err) {
+            // Stays on the card rather than becoming a toast: the reply
+            // is still here, still editable, and still copyable, which
+            // is exactly what the facilitator needs next.
+            setSendState("failed");
+            setSendError(err instanceof Error ? err.message : String(err));
+        }
+    }
+
     async function clickCopy() {
         const ok = await clipboard.copy(text);
         if (ok) {
@@ -198,6 +253,11 @@ export function DraftCard({
     }
 
     const toName = recipientName ?? context?.displayName ?? "the participant";
+    // First name only on the Send button and in the confirm strip: the
+    // button has to stay readable in a narrow column, and "Send to
+    // Kaz01 on Hope" is the question a facilitator is actually
+    // answering.
+    const firstName = toName.split(/\s+/)[0] || toName;
     const chars = text.length;
 
     return (
@@ -345,6 +405,11 @@ export function DraftCard({
                         </Button>
                         <Button
                             size="sm"
+                            // Demoted to secondary when Send is
+                            // available: two primary buttons side by
+                            // side make the safer one compete with the
+                            // irreversible one for the same glance.
+                            variant={canPublish ? "secondary" : "primary"}
                             onClick={clickCopy}
                             disabled={pending || !text.trim()}
                             className="gap-1.5"
@@ -356,9 +421,115 @@ export function DraftCard({
                             )}
                             {clipboard.copied ? "Copied" : "Copy reply"}
                         </Button>
+                        {canPublish && sendState !== "sent" && (
+                            <Button
+                                ref={sendRef}
+                                size="sm"
+                                onClick={() => setSendState("confirming")}
+                                disabled={
+                                    pending ||
+                                    !text.trim() ||
+                                    sendState === "confirming" ||
+                                    sendState === "sending"
+                                }
+                                className="gap-1.5"
+                            >
+                                <Send className="h-3.5 w-3.5" aria-hidden />
+                                Send to {firstName} on Hope
+                            </Button>
+                        )}
+                        {sendState === "sent" && (
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled
+                                className="gap-1.5"
+                            >
+                                <Check className="h-3.5 w-3.5" aria-hidden />
+                                Sent to Hope
+                            </Button>
+                        )}
                     </div>
                 </div>
 
+                {/* Asks before the one action that cannot be undone.
+                    Inline rather than a modal dialog: the reply it is
+                    about stays on screen and readable, which is the
+                    thing worth checking before sending it. */}
+                {sendState === "confirming" && (
+                    <div
+                        role="group"
+                        aria-label={`Confirm sending this reply to ${firstName}`}
+                        className="space-y-2 border-t border-border bg-surface-2/60 px-3 py-2.5"
+                    >
+                        <p className="text-xs leading-relaxed text-text-2">
+                            Send this reply to {firstName}? It will appear
+                            under their post on Hope, and they may get a
+                            notification. You can&apos;t take it back.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                            <Button
+                                size="sm"
+                                autoFocus
+                                onClick={clickSend}
+                                className="gap-1.5"
+                            >
+                                <Send className="h-3.5 w-3.5" aria-hidden />
+                                Send
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                    setSendState("idle");
+                                    // Focus goes back where it came
+                                    // from; otherwise it falls to
+                                    // <body> and a keyboard user is
+                                    // dropped at the top of the page.
+                                    sendRef.current?.focus();
+                                }}
+                            >
+                                Cancel
+                            </Button>
+                        </div>
+                    </div>
+                )}
+                {sendState === "sending" && (
+                    <p className="border-t border-border px-3 py-1.5 text-xs text-muted">
+                        <Loader2
+                            className="mr-1.5 inline h-3 w-3 animate-spin"
+                            aria-hidden
+                        />
+                        Sending…
+                    </p>
+                )}
+                {sendState === "failed" && sendError && (
+                    <div className="space-y-1.5 border-t border-border bg-surface-2/60 px-3 py-2.5 text-xs">
+                        <p className="font-semibold text-text">
+                            {friendlyPublishError(sendError).title}
+                        </p>
+                        <p className="leading-relaxed text-text-2">
+                            {friendlyPublishError(sendError).body}
+                        </p>
+                        <details className="text-muted">
+                            <summary className="cursor-pointer select-none hover:text-text-2">
+                                Technical details
+                            </summary>
+                            <p className="mt-1 break-all font-mono text-[10px] leading-relaxed">
+                                {sendError}
+                            </p>
+                        </details>
+                    </div>
+                )}
+                {/* Explains a missing Send when there is something a
+                    facilitator can do about it — a forum post they can
+                    answer on Hope, say. Silent when Send is simply
+                    switched off for the deployment. */}
+                {!canPublish && publishBlockedReason && (
+                    <p className="border-t border-border px-3 py-1.5 text-xs text-muted">
+                        {publishBlockedReason}
+                    </p>
+                )}
                 {/* Always-mounted polite region (a display:none live
                     region is not announced); the styled line renders
                     only when there is something true to say. */}
