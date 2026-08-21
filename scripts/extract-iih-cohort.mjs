@@ -390,7 +390,22 @@ export function buildCohortBundle(
             `bios will fall back to a generic placeholder.`,
         );
     }
-    const picks = pickRepresentative(users);
+    // Facilitators are staff, not participants. They appear in the
+    // platform's user activity for a cohort exactly as participants do,
+    // so without this they are scored for dropout risk and sit in the
+    // follow-up queue alongside the people they are meant to be
+    // supporting — observed on cohort 1223, where three facilitators
+    // ranked at 87% because they had never taken part in their own
+    // course.
+    //
+    // `facilitatorIds` is derived from who has authored a facilitator
+    // comment, so it identifies anyone who has replied in the module.
+    // It cannot identify a facilitator who has never posted; that needs
+    // a role on the participant record, which the platform does not
+    // currently send. Raised with the platform engineer.
+    const picks = pickRepresentative(users).filter(
+        (u) => !facilitatorIds.has(u.userId),
+    );
     const moduleId = picks0Module(users);
 
     const facilitatorByUser = extractFacilitatorReplies(
