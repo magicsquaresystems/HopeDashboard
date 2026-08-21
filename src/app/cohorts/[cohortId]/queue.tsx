@@ -349,6 +349,20 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                         onRetry={() => batch.refetch()}
                     />
                 )}
+                {/* Snoozes and contact markers are the one thing here
+                    set by OTHER people, so their absence is a fact about
+                    the list rather than a background error: a colleague's
+                    snooze simply will not appear. Only shown when there
+                    is no prior copy to fall back on — a blip mid-session
+                    keeps showing the last good state, which is honest
+                    enough without a warning. */}
+                {queueState.isError && !queueState.data && (
+                    <p className="px-1 pb-2 text-xs text-muted">
+                        Snoozed and contacted markers aren&apos;t available
+                        right now, so changes made by colleagues may not
+                        show here.
+                    </p>
+                )}
                 {/* Explains the missing SCORES, not a missing list —
                     the people are right below it. The ordering rule and
                     the reason for the wait are on the row badges and the

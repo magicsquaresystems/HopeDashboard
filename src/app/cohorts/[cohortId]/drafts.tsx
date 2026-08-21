@@ -221,10 +221,22 @@ export function Drafts({ cohort }: { cohort: CohortMeta }) {
         // early-return silently dropped it.
         const markContacted = () => {
             if (!participantId) return;
-            queueOp.mutate({ op: "contacted", participantId, action });
-            useSessionStatsStore
-                .getState()
-                .recordContact(cohort.id, participantId);
+            queueOp.mutate(
+                { op: "contacted", participantId, action },
+                {
+                    // The counter moves only once the SHARED marker is
+                    // written. It is a count of "colleagues can see I
+                    // handled this", so incrementing it on a failed
+                    // write reported outreach nobody else could see —
+                    // the exact confusion the shared marker exists to
+                    // prevent. A failure now leaves the count alone and
+                    // raises a notice instead.
+                    onSuccess: () =>
+                        useSessionStatsStore
+                            .getState()
+                            .recordContact(cohort.id, participantId),
+                },
+            );
         };
         // The HITL research record needs a real draft_set_id AND a real
         // draft id. `writeMode` has neither: its draft is synthesised

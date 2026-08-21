@@ -5,6 +5,11 @@ import { useSession } from "next-auth/react";
 
 import { proxyFailure } from "@/lib/api/proxy-error";
 import {
+    friendlyQueueOpError,
+    isQueueStateFatal,
+} from "@/lib/queue-op-error";
+import { useNoticeStore } from "@/lib/store/noticeStore";
+import {
     applyOp,
     emptyQueueState,
     type CohortQueueState,
@@ -43,12 +48,21 @@ export function useQueueState(cohortId: number) {
         // the previous value stays until a fetch succeeds.
         placeholderData: (prev) => prev,
         staleTime: 15_000,
-        refetchInterval: POLL_MS,
+        // Stop polling once the failure is one that cannot fix itself.
+        // A missing store or an ended session fails identically every 30
+        // seconds forever; continuing to ask buries the reason under
+        // more failures and keeps a dead deployment looking busy.
+        refetchInterval: (query) =>
+            isQueueStateFatal(query.state.error) ? false : POLL_MS,
+        retry: (count, error) => !isQueueStateFatal(error) && count < 1,
     });
 }
 
 export function useQueueOp(cohortId: number) {
     const qc = useQueryClient();
+    // Read off the store rather than through the hook's selector: this
+    // is called from a mutation callback, not from render.
+    const pushNotice = useNoticeStore((s) => s.push);
     const { data: session } = useSession();
     const me = session?.user?.email?.toLowerCase() ?? "you";
     const key = queueStateKey(cohortId);
@@ -73,11 +87,17 @@ export function useQueueOp(cohortId: number) {
             );
             return { prev };
         },
-        onError: (_err, _op, ctx) => {
+        onError: (err, op, ctx) => {
             // Restore the snapshot rather than refetching: a failed write
             // means the server never changed, and rolling back locally is
             // both instant and certain.
             if (ctx?.prev) qc.setQueryData(key, ctx.prev);
+            // Then SAY so. The rollback alone made a snoozed row
+            // reappear a moment later with no explanation, which reads
+            // as the dashboard losing clicks. It matters most for
+            // `contacted`, where the marker exists so a colleague does
+            // not message the same participant.
+            pushNotice(friendlyQueueOpError(op.op, err));
         },
         onSuccess: (serverState) => {
             qc.setQueryData(key, serverState);

@@ -10,6 +10,7 @@ import {
     resolveCohort,
 } from "@/lib/server/assignments";
 import { CohortSessionReset } from "@/components/cohort-session-reset";
+import { NoticeBar } from "@/components/notice-bar";
 import { Topbar } from "@/components/topbar";
 import { WeekSelector } from "@/components/week-selector";
 import { Queue } from "./queue";
@@ -58,6 +59,12 @@ export default async function CohortDashboard({
                 Participant Insights Hub, cohort {cohort.code}
             </h1>
             <CohortSessionReset cohortId={cohort.id} />
+            {/* One always-mounted live region for the whole page. Queue
+                writes fail inside mutation callbacks, far from anywhere
+                that could render a message, and the same failure can be
+                triggered from the queue, the detail panel or the drafts
+                column. */}
+            <NoticeBar />
             <Topbar cohort={cohort} />
             <div className="border-b border-border bg-surface-2/40 px-4 py-2 sm:px-5">
                 <WeekSelector

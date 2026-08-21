@@ -14,10 +14,13 @@
  *   for a day, so they agree — but they are two different requests, and a
  *   discrepancy means the cache keys diverged, not that the model is unstable.
  *
- * - **Snooze and dismiss deselect on purpose.** Hiding someone while their
- *   detail stays open would leave the panel describing a participant no longer
- *   in the list, so both actions clear the selection and return the facilitator
- *   to an empty panel — the queue is the thing they should look at next.
+ * - **Snooze and dismiss deselect on purpose, once the write lands.** Hiding
+ *   someone while their detail stays open would leave the panel describing a
+ *   participant no longer in the list, so both actions clear the selection and
+ *   return the facilitator to an empty panel — the queue is the thing they
+ *   should look at next. Deselecting before the write confirmed meant a failed
+ *   snooze cleared the panel too, so the facilitator lost their place over an
+ *   action that never happened.
  *
  * - **Prev/next walk bundle order, not risk order.** Neighbour navigation uses
  *   the participant order in the cohort bundle, so it is stable while the
@@ -122,19 +125,30 @@ export function Detail({
     // describing someone who has just left the queue. Both are now
     // persisted and shared: a colleague working the same cohort sees the
     // participant disappear from their queue too, with your name on it.
+    //
+    // The deselect happens on SUCCESS, not on click. Clearing it up
+    // front meant a failed write emptied the panel anyway: the row
+    // rolled back into the queue, the facilitator was left staring at
+    // "No participant selected", and the two events looked unrelated.
+    // Now a failure leaves them exactly where they were, with a notice
+    // saying why.
     function onSnooze() {
         if (!selectedId) return;
-        queueOp.mutate({
-            op: "snooze",
-            participantId: selectedId,
-            days: SNOOZE_DAYS,
-        });
-        select(null);
+        queueOp.mutate(
+            {
+                op: "snooze",
+                participantId: selectedId,
+                days: SNOOZE_DAYS,
+            },
+            { onSuccess: () => select(null) },
+        );
     }
     function onDismiss() {
         if (!selectedId) return;
-        queueOp.mutate({ op: "dismiss", participantId: selectedId });
-        select(null);
+        queueOp.mutate(
+            { op: "dismiss", participantId: selectedId },
+            { onSuccess: () => select(null) },
+        );
     }
 
     if (!selectedId) {
@@ -294,6 +308,12 @@ export function Detail({
                             variant="secondary"
                             size="sm"
                             onClick={onSnooze}
+                            // The write is shared state now, so it is a
+                            // round trip rather than a local toggle.
+                            // Without this a second click fires a second
+                            // op against a row that is already leaving.
+                            loading={queueOp.isPending}
+                            loadingText="Snoozing…"
                             className="gap-1.5 whitespace-nowrap"
                         >
                             <Clock className="h-3.5 w-3.5" aria-hidden />
@@ -303,6 +323,8 @@ export function Detail({
                             variant="ghost"
                             size="sm"
                             onClick={onDismiss}
+                            loading={queueOp.isPending}
+                            loadingText="Dismissing…"
                             className="gap-1.5 whitespace-nowrap text-risk-hi hover:bg-risk-hi-bg"
                         >
                             <X className="h-3.5 w-3.5" aria-hidden />
