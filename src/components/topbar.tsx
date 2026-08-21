@@ -16,13 +16,18 @@ type TopbarProps = {
 };
 
 export function Topbar({ cohort }: TopbarProps) {
-    const { batch, isScoring } = useCohortScoring(cohort.id);
+    const { batch, isScoring, notStarted } = useCohortScoring(cohort.id);
     // A failed score is not a score of zero. `isScoring` now ends on
     // error (so the page stops spinning), which left these pills
     // rendering a confident "0 need follow-up" beside a queue saying
     // the scores could not be loaded. The dash means "no number yet",
     // and that is still the truth after a failure.
-    const noNumbers = isScoring || batch.isError;
+    //
+    // `notStarted` joins them: in a cohort's first week nothing has
+    // been scored, so "0 need follow-up" would report an all-clear the
+    // model never gave. It is a settled state rather than a pending
+    // one, which is why it drives the dash but not `aria-busy`.
+    const noNumbers = isScoring || batch.isError || notStarted;
     const queueState = useQueueState(cohort.id);
     const sentThisSession = useSessionStatsStore((s) =>
         s.contactedCount(cohort.id),
@@ -35,8 +40,8 @@ export function Topbar({ cohort }: TopbarProps) {
     const { data: session } = useSession();
     // `||`, not `??`: an account whose name is the empty string would
     // otherwise keep it, and since the topbar only renders the account
-    // menu when `who` is truthy, that facilitator would have no way to
-    // sign out at all.
+    // menu when `who` is truthy, that facilitator would lose the only
+    // in-page route back to the Facilitator Dashboard.
     const who = session?.user?.name || session?.user?.email || null;
 
     // Frozen at mount for the same reason as the queue's clock: snooze
@@ -111,12 +116,24 @@ export function Topbar({ cohort }: TopbarProps) {
                 <StatPill
                     value={needsFollowUp}
                     label="need follow-up"
-                    loading={noNumbers}
+                    unknown={noNumbers}
+                    busy={isScoring}
+                    title={
+                        notStarted
+                            ? "Nobody is scored until this cohort's first week completes, so there is no follow-up count yet."
+                            : undefined
+                    }
                 />
                 <StatPill
                     value={high}
                     label="high priority"
-                    loading={noNumbers}
+                    unknown={noNumbers}
+                    busy={isScoring}
+                    title={
+                        notStarted
+                            ? "Nobody is scored until this cohort's first week completes, so there is no priority count yet."
+                            : undefined
+                    }
                 />
                 {/* Session counter is local state — never in flight. */}
                 <StatPill value={sentThisSession} label="contacted this session" />
@@ -138,16 +155,26 @@ export function Topbar({ cohort }: TopbarProps) {
 function StatPill({
     value,
     label,
-    loading = false,
+    unknown = false,
+    busy = false,
+    title,
 }: {
     value: number;
     label: string;
-    loading?: boolean;
+    /** No number to show. Covers scoring in flight, a failed score, and
+     *  a cohort too new to score — all of which must render the dash. */
+    unknown?: boolean;
+    /** Of those, only the in-flight one is `aria-busy`: a screen reader
+     *  told a settled state is busy waits for an update that is never
+     *  coming. */
+    busy?: boolean;
+    title?: string;
 }) {
     return (
         <div
             className="flex items-baseline gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1.5"
-            aria-busy={loading || undefined}
+            aria-busy={busy || undefined}
+            title={title}
         >
             {/* Deliberately not a spinner. The week bar already owns the
                 one "scoring…" affordance; three spinners racing in the same
@@ -156,10 +183,10 @@ function StatPill({
             <span
                 className={
                     "text-sm font-semibold tracking-tight tabular-nums " +
-                    (loading ? "text-muted/50" : "text-text")
+                    (unknown ? "text-muted/50" : "text-text")
                 }
             >
-                {loading ? "—" : value}
+                {unknown ? "—" : value}
             </span>
             <span className="text-xs text-muted">{label}</span>
         </div>

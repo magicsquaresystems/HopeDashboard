@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { useCohortBatch } from "@/lib/hooks/api";
 import { useCohortBundle } from "@/lib/hooks/useCohortBundle";
 import { bundleParticipantIds, bundleToHistory } from "@/lib/realCohort";
+import { rosterOrder } from "@/lib/roster";
 import {
     scoreAtDay as scoreAtDayForWeek,
     useScoringStore,
@@ -30,8 +31,13 @@ export function useCohortScoring(cohortId: number) {
     // A cohort in its first six days has no fully elapsed week. Scoring
     // it anyway would hand the model a mostly-empty window that reads as
     // total disengagement and flags everyone high-risk, so the batch is
-    // withheld until week 1 completes (day 7). `useCohortBatch` is gated
-    // on non-empty histories, so no request fires.
+    // withheld until week 1 completes (day 7).
+    //
+    // It withholds the SCORES only. Histories are still built, because
+    // the queue lists its rows from them: emptying the array here also
+    // emptied the queue, and a brand-new cohort showed no participants
+    // at all — nobody to select, so no detail panel and no drafts —
+    // while people were posting on day one.
     const notStarted = useMemo(
         () =>
             bundle.data
@@ -44,16 +50,30 @@ export function useCohortScoring(cohortId: number) {
     );
 
     const histories = useMemo<ParticipantHistory[]>(() => {
-        if (!bundle.data || notStarted) return [];
+        if (!bundle.data) return [];
         return bundleParticipantIds(bundle.data)
             .map((id) => bundleToHistory(bundle.data!, id, scoreAt))
             .filter((h): h is ParticipantHistory => h !== null);
-    }, [bundle.data, notStarted, scoreAt]);
+    }, [bundle.data, scoreAt]);
 
-    const batch = useCohortBatch(histories, cohortId);
+    const batch = useCohortBatch(histories, cohortId, !notStarted);
+
+    /**
+     * The first-week list: everyone, most recently active first.
+     *
+     * Empty once scoring is available, so a caller can treat a non-empty
+     * roster as "render these unscored" without also checking the flag.
+     */
+    const roster = useMemo<ParticipantHistory[]>(
+        () => (notStarted ? rosterOrder(histories) : []),
+        [notStarted, histories],
+    );
 
     return {
         batch,
+        /** Unscored, recency-ordered rows for a cohort in its first
+         *  week. Empty whenever `batch` can speak. */
+        roster,
         /** The underlying cohort-bundle query, exposed so the queue can
          *  tell "the data failed to load" and "this cohort has no data"
          *  apart from "everything loaded and the filter matched nobody"
@@ -65,7 +85,8 @@ export function useCohortScoring(cohortId: number) {
          *  exact rows the batch call scored, for callers that need to
          *  join predictions back to their inputs. */
         histories,
-        /** Participants in this cohort — 0 until the bundle lands. */
+        /** Participants in this cohort — 0 until the bundle lands.
+         *  Counts everyone the bundle carries, scored or not. */
         total: histories.length,
         /**
          * True from the moment a re-score is triggered until scores land.
@@ -82,6 +103,14 @@ export function useCohortScoring(cohortId: number) {
          */
         isScoring:
             bundle.isLoading ||
-            (histories.length > 0 && !batch.data && !batch.isError),
+            // `!notStarted` is load-bearing now that histories survive
+            // the first week: without it a day-one cohort has rows, no
+            // batch and no error, and the topbar would claim to be
+            // scoring forever something it has deliberately not asked
+            // about.
+            (!notStarted &&
+                histories.length > 0 &&
+                !batch.data &&
+                !batch.isError),
     };
 }

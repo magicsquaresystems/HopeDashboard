@@ -84,13 +84,23 @@ export function Detail({
         if (!selectedId || !bundle.data) return null;
         return bundleToHistory(bundle.data, selectedId, scoreAt);
     }, [selectedId, bundle.data, scoreAt]);
-    const prediction = useParticipantPrediction(history, cohortId);
     const aliasLabel = useBundleDisplayName(selectedId ?? "", cohortId);
     const {
         isScoring,
         total: cohortTotal,
         batch: cohortBatch,
+        notStarted,
     } = useCohortScoring(cohortId);
+    // Withheld in the cohort's first week for the same reason the batch
+    // is: seven days of window over a cohort three days old reads as
+    // disengagement. Scoring one participant from the detail panel would
+    // have slipped past that and printed a confident percentage beside a
+    // queue row that says "Not scored yet". The profile, metrics and
+    // timeline below are facts rather than predictions, so they stay.
+    const prediction = useParticipantPrediction(
+        notStarted ? null : history,
+        cohortId,
+    );
 
     // Neighbour navigation: derive prev/next from the cohort bundle's
     // participant order. Falls back to no-op when the bundle hasn't
@@ -315,6 +325,17 @@ export function Detail({
                     before the number, not after. */}
                 {isAnchoredWeek(scoreAtWeek) && prediction.data && (
                     <AnchoredWeekNotice week={scoreAtWeek} />
+                )}
+                {/* Says why there is no gauge. Without it the panel
+                    just ends after the profile, and a missing number
+                    reads as a failure rather than a deliberate silence. */}
+                {notStarted && (
+                    <p className="rounded-md border border-border bg-surface-2/50 px-3 py-2 text-xs text-muted">
+                        No risk score yet. This cohort is still in its
+                        first week, and the model needs a full week of
+                        activity before its score means anything. What
+                        {" "}{name} has done so far is shown below.
+                    </p>
                 )}
                 <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start sm:gap-6">
                     <div className="shrink-0">

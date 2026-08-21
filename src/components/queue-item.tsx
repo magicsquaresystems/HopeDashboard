@@ -12,8 +12,15 @@ import type { RiskLevel } from "@/lib/api/dropout";
 type QueueItemProps = {
     participantId: string;
     cohortId?: number;
-    riskLevel: RiskLevel;
-    riskScore: number;
+    /**
+     * Absent in a cohort's first week, where the risk model is withheld
+     * because no week has elapsed to score. The row then reads "Not
+     * scored yet" instead of borrowing a tier it was never given — the
+     * facilitator can still open the person and reply to them, which is
+     * the whole reason the row is rendered at all.
+     */
+    riskLevel?: RiskLevel;
+    riskScore?: number;
     /** The service's calibrated tier cut-offs for the scored horizon
      *  (`threshold_low` / `threshold_high`). Drive the tooltip that
      *  explains why e.g. 30% reads as "Needs attention". */
@@ -39,8 +46,11 @@ export function QueueItem({
     onClick,
     contactedNote,
 }: QueueItemProps) {
-    const status = friendlyStatus(riskLevel);
-    const bandNote = tierExplanation(riskLevel, thresholdLow, thresholdHigh);
+    const scored = riskLevel !== undefined;
+    const status = scored ? friendlyStatus(riskLevel) : null;
+    const bandNote = scored
+        ? tierExplanation(riskLevel, thresholdLow, thresholdHigh)
+        : "This cohort is still in its first week, so there is not yet a full week of activity for the model to read.";
     const aliasLabel = useBundleDisplayName(participantId, cohortId);
     return (
         <button
@@ -66,18 +76,19 @@ export function QueueItem({
                         className="shrink-0 text-xs tabular-nums text-muted"
                         title={bandNote}
                     >
-                        {Number.isFinite(riskScore)
+                        {typeof riskScore === "number" &&
+                        Number.isFinite(riskScore)
                             ? `${(riskScore * 100).toFixed(0)}%`
                             : "—"}
                     </span>
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                     <Badge
-                        variant={status.badgeVariant}
+                        variant={status ? status.badgeVariant : "neutral"}
                         className="whitespace-nowrap"
                         title={bandNote}
                     >
-                        {status.label}
+                        {status ? status.label : "Not scored yet"}
                     </Badge>
                     {lastActiveLabel && (
                         <span className="truncate text-xs text-muted">

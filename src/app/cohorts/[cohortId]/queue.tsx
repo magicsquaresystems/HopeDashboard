@@ -47,7 +47,8 @@ import { useQueueLayoutStore } from "@/lib/store/queueLayoutStore";
 import { isAnchoredWeek, useScoringStore } from "@/lib/store/scoringStore";
 import { useUiStore } from "@/lib/store/uiStore";
 import { useQueueOp, useQueueState } from "@/lib/hooks/useQueueState";
-import { friendlyLoadError } from "@/lib/load-error";
+import { friendlyLoadError, type FriendlyLoadError } from "@/lib/load-error";
+import { HopeMoveLink } from "@/components/hope-move-link";
 import { agoLabel, shortActor } from "@/lib/queue-state-shared";
 import { QUEUE_PILL_LABELS } from "@/lib/risk";
 import { lastActiveLabel } from "@/lib/signals";
@@ -59,6 +60,22 @@ import type {
 } from "@/lib/api/dropout";
 
 const FILTERS: Array<RiskLevel | "all"> = ["all", "high", "medium", "low"];
+
+/**
+ * A row in the queue, scored or not.
+ *
+ * The risk fields are optional so the same list, filtering, snoozing and
+ * pagination serve a cohort in its first week, where the model is
+ * withheld and rows come from the roster. A prediction satisfies this
+ * shape as it stands, so the scored path is unchanged.
+ */
+type QueueRow = {
+    participant_id: string;
+    risk_level?: RiskLevel;
+    dropout_risk?: number;
+    threshold_low?: number;
+    threshold_high?: number;
+};
 
 /**
  * "Now", frozen at mount.
@@ -80,7 +97,15 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
     // same instance the topbar reads, so the two can never disagree on
     // what was scored. The hook also withholds scoring entirely while
     // the cohort is under a week old (`notStarted`).
-    const { batch, bundle, histories, notStarted } = useCohortScoring(cohort.id);
+    const { batch, bundle, histories, notStarted, roster } = useCohortScoring(
+        cohort.id,
+    );
+
+    // In a cohort's first week the model is withheld, so rows come from
+    // the roster instead of from predictions and carry no tier. Derived
+    // from the roster rather than from `notStarted` so the list and its
+    // labelling can never disagree about which one is on screen.
+    const unscored = roster.length > 0;
 
     const histLookup = useMemo(() => {
         const m = new Map<string, ParticipantHistory>();
@@ -115,10 +140,22 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
     }, [filter, query]);
 
     const { visible, hidden } = useMemo(() => {
-        const preds = data?.predictions ?? [];
+        // One row shape for both states. Predictions already satisfy it;
+        // roster rows simply have no risk fields, which is what makes
+        // "Not scored yet" the honest rendering rather than a default
+        // tier standing in for a score nobody produced.
+        const rows: QueueRow[] =
+            roster.length > 0
+                ? roster.map((h) => ({ participant_id: h.participant_id }))
+                : (data?.predictions ?? []);
         const q = query.trim().toLowerCase();
-        const matchesFilter = preds.filter((p) =>
-            filter === "all" ? true : p.risk_level === filter,
+        // Risk filtering is meaningless without risk, and silently
+        // matching nothing would read as "everyone left". The chips are
+        // disabled in that state; this keeps the list whole regardless.
+        const matchesFilter = rows.filter((p) =>
+            filter === "all" || p.risk_level === undefined
+                ? true
+                : p.risk_level === filter,
         );
         const matchesQuery = matchesFilter.filter((p) =>
             q ? p.participant_id.toLowerCase().includes(q) : true,
@@ -133,7 +170,7 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
             else visible.push(p);
         }
         return { visible, hidden };
-    }, [data?.predictions, filter, query, snoozes, dismissals, now]);
+    }, [data?.predictions, roster, filter, query, snoozes, dismissals, now]);
 
     // Paginate the visible list. With 51 cohort participants and a page
     // size of 10, you get 6 pages; smaller filtered sets land on a
@@ -158,7 +195,12 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
     ).length;
     const listedLabel =
         `${visible.length} participant${visible.length === 1 ? "" : "s"} listed` +
-        (filter === "all" ? ` · ${needingFollowUp} need follow-up` : "");
+        // "0 need follow-up" would be a claim the model never made: in
+        // the first week nothing has been scored, so nothing is known
+        // to need follow-up rather than nothing needing it.
+        (filter === "all" && !unscored
+            ? ` · ${needingFollowUp} need follow-up`
+            : "");
 
     // Collapsed rail: a thin vertical card that preserves the count
     // (situational awareness) and lets the facilitator re-expand with
@@ -231,12 +273,23 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                         role="group"
                         aria-label="Filter queue by status"
                     >
+                        {/* Disabled rather than hidden while nothing
+                            is scored: hiding the controls would leave a
+                            facilitator hunting for filters that had
+                            silently vanished, and the tooltip says when
+                            they come back. */}
                         {FILTERS.map((f) => (
                             <Button
                                 key={f}
                                 size="sm"
                                 variant={filter === f ? "primary" : "ghost"}
                                 aria-pressed={filter === f}
+                                disabled={unscored && f !== "all"}
+                                title={
+                                    unscored && f !== "all"
+                                        ? "Filtering by risk starts once this cohort's first week completes and the model can score it."
+                                        : undefined
+                                }
                                 onClick={() => setFilter(f)}
                             >
                                 {QUEUE_PILL_LABELS[f]}
@@ -296,11 +349,17 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                         onRetry={() => batch.refetch()}
                     />
                 )}
+                {/* The people are listed below this line, so it explains
+                    the missing SCORES rather than a missing list — the
+                    previous wording sat above an empty queue and read as
+                    "there is nothing here". */}
                 {notStarted && !isLoading && !error && !bundle.isError && (
-                    <p className="px-1 py-4 text-center text-xs text-muted">
-                        This cohort started less than a week ago. Scoring
-                        opens once the first week completes, because the
-                        model needs a full week of activity to read.
+                    <p className="px-1 pb-3 text-xs text-muted">
+                        This cohort started less than a week ago, so nobody
+                        is scored yet — the model needs a full week of
+                        activity to read. Everyone is listed below, most
+                        recently active first, so you can still welcome
+                        them and reply to what they post.
                     </p>
                 )}
                 {bundle.data === null &&
@@ -313,8 +372,7 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                             tell the programme team.
                         </p>
                     )}
-                {!notStarted &&
-                    visible.length === 0 &&
+                {visible.length === 0 &&
                     !isLoading &&
                     !error &&
                     !bundle.isError &&
@@ -505,11 +563,16 @@ function LoadErrorNotice({
     title,
     body,
     detail,
+    kind = "outage",
     onRetry,
 }: {
     title: string;
     body: string;
     detail?: string;
+    /** Drives the way out. A dead session gets a link back to Hope
+     *  instead of a retry: the retry cannot succeed, and offering it
+     *  makes a working dashboard look broken. */
+    kind?: FriendlyLoadError["kind"];
     onRetry: () => void;
 }) {
     return (
@@ -527,15 +590,22 @@ function LoadErrorNotice({
                     <p className="mt-1 leading-relaxed text-text-2">{body}</p>
                 </div>
             </div>
-            <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={onRetry}
-                className="w-full"
-            >
-                Try again
-            </Button>
+            {kind === "session" ? (
+                <HopeMoveLink
+                    variant="prominent"
+                    label="Open from Facilitator Dashboard"
+                />
+            ) : (
+                <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={onRetry}
+                    className="w-full"
+                >
+                    Try again
+                </Button>
+            )}
             {detail ? (
                 <details className="text-muted">
                     <summary className="cursor-pointer select-none hover:text-text-2">

@@ -101,6 +101,16 @@ async function getJSON<T>(path: string): Promise<T> {
 export function useCohortBatch(
     participants: ParticipantHistory[],
     cohortId: number | string | null = null,
+    /**
+     * Caller-side veto, ANDed with the non-empty check below.
+     *
+     * Exists because "there is nobody to score" and "these people must
+     * not be scored yet" are different facts. A cohort in its first week
+     * has histories — the queue lists them — but scoring them would hand
+     * the model a partial window; the caller says so here rather than
+     * emptying the array and taking the roster down with it.
+     */
+    enabled: boolean = true,
 ) {
     const body: BatchEventRequest = { participants };
     // Cache key must include cohortId in addition to score_at_day +
@@ -118,7 +128,7 @@ export function useCohortBatch(
         ],
         queryFn: () => postJSON<BatchResponse>("/api/proxy/dropout/batch", body),
         staleTime: ONE_DAY,
-        enabled: participants.length > 0,
+        enabled: enabled && participants.length > 0,
     });
 }
 
