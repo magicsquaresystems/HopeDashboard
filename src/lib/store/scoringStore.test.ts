@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+    useScoringStore,
     isAnchoredWeek,
     MODEL_MAX_WEEK,
     programmeWeeks,
@@ -78,5 +79,40 @@ describe("weeksWithData", () => {
 
     it("falls back to the full programme when the start is unparseable", () => {
         expect(weeksWithData(42, "not-a-date", atDay(3))).toBe(6);
+    });
+});
+
+describe("openCohort", () => {
+    function fresh() {
+        useScoringStore.setState({ scoreAtWeek: 6, openCohortId: null });
+        return useScoringStore.getState();
+    }
+
+    it("lands on the cohort's most recent elapsed week", () => {
+        // Not a fixed week 6: a six-week cohort used to open on its last
+        // week and a ten-week one four weeks behind where it stood.
+        fresh().openCohort(1731, 9);
+        expect(useScoringStore.getState().scoreAtWeek).toBe(9);
+    });
+
+    it("does not move a week the facilitator chose themselves", () => {
+        // Stepping back to week 3 to see how the cohort looked then must
+        // survive the background refresh that follows a few seconds later.
+        fresh().openCohort(1731, 9);
+        useScoringStore.getState().setScoreAtWeek(3);
+        useScoringStore.getState().openCohort(1731, 9);
+        expect(useScoringStore.getState().scoreAtWeek).toBe(3);
+    });
+
+    it("lands again when a different cohort is opened", () => {
+        fresh().openCohort(1731, 9);
+        useScoringStore.getState().setScoreAtWeek(3);
+        useScoringStore.getState().openCohort(1223, 6);
+        expect(useScoringStore.getState().scoreAtWeek).toBe(6);
+    });
+
+    it("never lands below week 1, even before a cohort has run a week", () => {
+        fresh().openCohort(1800, 0);
+        expect(useScoringStore.getState().scoreAtWeek).toBe(1);
     });
 });

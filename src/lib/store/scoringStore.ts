@@ -55,11 +55,16 @@ export const MAX_PROGRAMME_WEEK = 16;
 export type ProgrammeWeek = number;
 
 /**
- * Landing week when a cohort opens. A literal, deliberately NOT derived
- * from MODEL_MAX_WEEK: the store initialises before WeekSelector's clamp
- * runs, so this value fires the first /batch. Deriving it from the model
- * ceiling made every cohort open with one wasted request at a week the
- * cohort may not have.
+ * Week the store holds before a cohort has told it anything.
+ *
+ * A literal, deliberately NOT derived from MODEL_MAX_WEEK: the store
+ * initialises before the selector can measure the cohort, so this value
+ * fires the first /batch. Deriving it from the model ceiling made every
+ * cohort open with one wasted request at a week the cohort may not have.
+ *
+ * It is a starting point, not the landing week — `openCohort` replaces
+ * it with the cohort's most recent elapsed week as soon as one is
+ * known.
  */
 const DEFAULT_PROGRAMME_WEEK: ProgrammeWeek = 6;
 
@@ -137,18 +142,35 @@ export function availableWeeks(
 
 type ScoringState = {
     scoreAtWeek: ProgrammeWeek;
+    /** Which cohort the current selection belongs to. */
+    openCohortId: number | null;
     setScoreAtWeek: (week: ProgrammeWeek) => void;
     /**
-     * Pull the current selection back to the last week that has data.
-     * Call when the cohort changes so the selector never points at a
-     * week the cohort hasn't reached (or doesn't have at all).
+     * Land on a cohort's most recent elapsed week.
+     *
+     * Only on arrival at a different cohort, which is the distinction
+     * that matters: a facilitator opening a cohort wants to see where it
+     * stands now, but one who has deliberately stepped back to week 3 to
+     * see how it looked then must not be yanked forward again by a
+     * background refresh a few seconds later.
+     */
+    openCohort: (cohortId: number, maxWeek: ProgrammeWeek) => void;
+    /**
+     * Pull the current selection back to the last week that has data,
+     * without moving it forward. For the case where the cohort is
+     * shorter than the week already selected.
      */
     clampToAvailable: (maxWeek: ProgrammeWeek) => void;
 };
 
 export const useScoringStore = create<ScoringState>((set, get) => ({
     scoreAtWeek: DEFAULT_PROGRAMME_WEEK,
+    openCohortId: null,
     setScoreAtWeek: (week) => set({ scoreAtWeek: week }),
+    openCohort: (cohortId, maxWeek) => {
+        if (get().openCohortId === cohortId) return;
+        set({ openCohortId: cohortId, scoreAtWeek: Math.max(1, maxWeek) });
+    },
     clampToAvailable: (maxWeek) => {
         const safe = Math.max(1, maxWeek);
         if (get().scoreAtWeek > safe) set({ scoreAtWeek: safe });

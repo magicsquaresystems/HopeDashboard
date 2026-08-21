@@ -47,6 +47,7 @@ export default async function CohortDashboard({
             <Topbar cohort={cohort} />
             <div className="border-b border-border bg-surface-2/40 px-4 py-2 sm:px-5">
                 <WeekSelector
+                    cohortId={cohort.id}
                     programmeLengthDays={cohort.programmeLengthDays}
                     programmeLengthKnown={cohort.programmeLengthKnown ?? true}
                     effectiveStart={cohort.effectiveStart}

@@ -29,10 +29,14 @@ import {
  * 0..20, so it includes weeks 1 and 2.
  */
 export function WeekSelector({
+    cohortId,
     programmeLengthDays,
     programmeLengthKnown = true,
     effectiveStart,
 }: {
+    /** Which cohort this selector belongs to, so arriving at a new one
+     *  lands on its own latest week. */
+    cohortId: number;
     programmeLengthDays: number;
     /** False when the length is the six-week fallback rather than a real
      *  finish date. The selector then shows only the weeks that have
@@ -47,6 +51,7 @@ export function WeekSelector({
     const week = useScoringStore((s) => s.scoreAtWeek);
     const setWeek = useScoringStore((s) => s.setScoreAtWeek);
     const clamp = useScoringStore((s) => s.clampToAvailable);
+    const openCohort = useScoringStore((s) => s.openCohort);
 
     // "Now", frozen at mount. A live clock would let the available-week
     // set change mid-interaction (and re-render the selector under the
@@ -77,8 +82,18 @@ export function WeekSelector({
         [allWeeks, programmeLengthKnown, maxWithData],
     );
 
-    // Pull the selection in when the cohort is shorter than the current
-    // pick, or hasn't run long enough to have that week's data yet.
+    // Arriving at a cohort lands on its most recent elapsed week: that is
+    // where the cohort actually stands, and it is what a facilitator
+    // opening it wants to see. The store held a fixed week 6, so a
+    // six-week cohort always opened on its final week and a ten-week one
+    // opened four weeks behind.
+    useEffect(() => {
+        openCohort(cohortId, maxWithData);
+    }, [cohortId, maxWithData, openCohort]);
+
+    // And pull the selection in if the cohort turns out to be shorter
+    // than the week already chosen. Separate from the above because this
+    // one must keep working while the facilitator stays on the cohort.
     useEffect(() => {
         clamp(maxWithData);
     }, [maxWithData, clamp]);
