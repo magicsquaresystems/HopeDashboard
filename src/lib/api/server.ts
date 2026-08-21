@@ -9,28 +9,40 @@ if (typeof window !== "undefined") {
     throw new Error("lib/api/server.ts must not be imported in browser code");
 }
 
+import { ApiError } from "@/lib/api/client";
 import { signerOrUndefined } from "@/lib/auth/sign";
 import { createCommentGenClient } from "@/lib/api/commentGen";
 import { createDropoutClient } from "@/lib/api/dropout";
 
 /**
- * The hosted Spaces are the default, not localhost.
+ * Backend URLs come from the environment, with no default.
  *
- * Both URLs are public identifiers rather than secrets, and this app is
- * built for one deployment, so defaulting to the services it actually
- * uses means a deployment only has to be given the three credentials
- * that genuinely cannot live in the repo. The previous localhost
- * defaults meant an unset variable pointed production at a machine that
- * does not exist, which surfaces as an unreachable backend rather than
- * as the missing configuration it is.
+ * There was a fallback to the hosted Spaces here. It made an unset
+ * variable invisible: the deployment quietly worked, so nobody could
+ * tell a configured deployment from an unconfigured one, and a
+ * diagnostic reading `process.env` reported "not configured" about a
+ * service that was answering perfectly well. Configuration that can be
+ * wrong silently is worse than configuration that is missing loudly.
  *
- * Anyone running the backends locally sets these in `.env.local`.
+ * Resolved per call rather than at module load, and reported as a 503
+ * with a code the UI already understands. Throwing at import time would
+ * take down every route in the bundle — including the pages that would
+ * have explained the problem — for one missing string.
+ *
+ * These are public identifiers, not secrets. `.env.example` carries the
+ * values this deployment uses.
  */
-const COMMENT_GEN_URL =
-    process.env.COMMENT_GEN_URL ??
-    "https://h4cdev-hope-comment-gen-api.hf.space";
-const DROPOUT_API_URL =
-    process.env.DROPOUT_API_URL ?? "https://h4cdev-hope-dropout-api.hf.space";
+function requiredBackendUrl(name: "COMMENT_GEN_URL" | "DROPOUT_API_URL"): string {
+    const value = process.env[name]?.trim();
+    if (!value) {
+        throw new ApiError(
+            503,
+            `This deployment is missing ${name}, so that service cannot be reached.`,
+            "backend_not_configured",
+        );
+    }
+    return value.replace(/\/+$/, "");
+}
 
 /**
  * `HF_TOKEN` is required to invoke private HF Spaces. Empty in pure-local
@@ -45,7 +57,7 @@ const HOPE_RISK_API_KEY = process.env.HOPE_RISK_API_KEY || undefined;
 
 export function commentGen() {
     return createCommentGenClient({
-        baseUrl: COMMENT_GEN_URL,
+        baseUrl: requiredBackendUrl("COMMENT_GEN_URL"),
         sign: signerOrUndefined(),
         authToken: HF_TOKEN,
     });
@@ -53,7 +65,7 @@ export function commentGen() {
 
 export function dropoutApi() {
     return createDropoutClient({
-        baseUrl: DROPOUT_API_URL,
+        baseUrl: requiredBackendUrl("DROPOUT_API_URL"),
         apiKey: HOPE_RISK_API_KEY,
         authToken: HF_TOKEN,
     });
