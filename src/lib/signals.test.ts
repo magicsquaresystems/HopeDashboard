@@ -104,3 +104,47 @@ describe("eventsLastNDays", () => {
         expect(eventsLastNDays(h, "discussion_post", 14).deltaPercent).toBeNull();
     });
 });
+
+describe("daysSinceLastEvent — a window that has not closed yet", () => {
+    const DAY = 86_400_000;
+    const START = "2026-08-21T00:00:00Z";
+    const now = new Date("2026-08-21T20:00:00Z").getTime();
+
+    function history(eventAt: string) {
+        return {
+            participant_id: "1",
+            effective_start: START,
+            // Week 1 closes on day 7 — six days after this cohort began
+            // and well into the future at `now`.
+            score_at_day: 7,
+            cohort_size: 3,
+            programme_length_days: 49,
+            events: [{ timestamp: eventAt, event_type: "login" }],
+        } as never;
+    }
+
+    it("does not age activity against days that have not happened", () => {
+        // The bug this covers: a participant who posted this morning was
+        // shown as "Last active 6 days ago", because the distance was
+        // measured to the close of a week still in progress.
+        expect(daysSinceLastEvent(history("2026-08-21T17:00:00Z"), now)).toBe(0);
+        expect(lastActiveLabel(history("2026-08-21T17:00:00Z"), now)).toBe(
+            "Active today",
+        );
+    });
+
+    it("still counts real quiet inside an unfinished week", () => {
+        expect(
+            daysSinceLastEvent(history("2026-08-19T17:00:00Z"), now),
+        ).toBe(2);
+    });
+
+    it("measures to the window's close once that close is in the past", () => {
+        // Replaying an earlier checkpoint must keep saying how quiet
+        // someone was AT that checkpoint, not how long ago it was.
+        const later = now + 30 * DAY;
+        expect(daysSinceLastEvent(history("2026-08-21T00:00:00Z"), later)).toBe(
+            7,
+        );
+    });
+});

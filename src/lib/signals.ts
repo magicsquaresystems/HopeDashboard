@@ -46,18 +46,34 @@ function sortedTimestamps(history: ParticipantHistory): number[] {
  * "never active" is a different fact from "active N days ago", and the
  * old fallback of returning `score_at_day` fabricated a day-0 event that
  * rendered as "Last active 42 days ago" for people who never showed up.
+ *
+ * Measured against the window's close rather than today on purpose: at
+ * week 3 of a finished cohort the honest statement is how quiet someone
+ * was *at that checkpoint*, not how long ago the cohort ended.
+ *
+ * But the close is capped at `now`, because a window that has not
+ * finished yet cannot have elapsed. In a cohort's first week the
+ * selected week closes on day 7 — up to six days in the future — and
+ * without the cap someone who posted this morning was reported as "Last
+ * active 6 days ago". Nobody can be inactive for time that has not
+ * happened.
  */
 export function daysSinceLastEvent(
     history: ParticipantHistory,
+    now: number = Date.now(),
 ): number | null {
     const stamps = sortedTimestamps(history);
     if (stamps.length === 0) return null;
     const last = stamps[stamps.length - 1];
-    return Math.max(0, Math.floor((scoreWindowEnd(history) - last) / DAY_MS));
+    const end = Math.min(scoreWindowEnd(history), now);
+    return Math.max(0, Math.floor((end - last) / DAY_MS));
 }
 
-export function lastActiveLabel(history: ParticipantHistory): string {
-    const d = daysSinceLastEvent(history);
+export function lastActiveLabel(
+    history: ParticipantHistory,
+    now: number = Date.now(),
+): string {
+    const d = daysSinceLastEvent(history, now);
     if (d === null) return "No activity yet";
     if (d === 0) return "Active today";
     if (d === 1) return "Last active 1 day ago";

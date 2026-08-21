@@ -27,7 +27,7 @@
 
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Clock, Loader2, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +60,7 @@ import { friendlyStatus, tierExplanation } from "@/lib/risk";
 import type { ParticipantHistory } from "@/lib/api/dropout";
 import {
     daysSinceLastEvent,
+    scoreWindowEnd,
     eventsLastNDays,
     facilitatorContactCount,
 } from "@/lib/signals";
@@ -428,7 +429,16 @@ function DetailMetrics({
 }: {
     history: ParticipantHistory;
 }) {
-    const lastActiveDays = daysSinceLastEvent(history);
+    // Frozen at mount, like the queue's clock. `daysSinceLastEvent`
+    // defaults to `Date.now()`, and reading it during render makes the
+    // server's HTML and the client's first paint disagree at a day
+    // boundary; it would also let the tile tick over mid-visit.
+    const [now] = useState(() => Date.now());
+    const lastActiveDays = daysSinceLastEvent(history, now);
+    // True while the selected week is still running, which only happens
+    // in a cohort's first week. The tile then reports where things
+    // stand today rather than at a checkpoint that has not arrived.
+    const windowStillOpen = scoreWindowEnd(history) > now;
     const discussion = eventsLastNDays(history, "discussion_post", 14);
     const facilitatorTouches = facilitatorContactCount(history);
 
@@ -469,7 +479,9 @@ function DetailMetrics({
                 delta={
                     lastActiveDays === null
                         ? "no activity recorded"
-                        : "as at selected week"
+                        : windowStillOpen
+                          ? "as at today"
+                          : "as at selected week"
                 }
                 tone={lastActiveTone}
             />

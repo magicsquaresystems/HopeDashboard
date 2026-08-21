@@ -349,17 +349,14 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                         onRetry={() => batch.refetch()}
                     />
                 )}
-                {/* The people are listed below this line, so it explains
-                    the missing SCORES rather than a missing list — the
-                    previous wording sat above an empty queue and read as
-                    "there is nothing here". */}
+                {/* Explains the missing SCORES, not a missing list —
+                    the people are right below it. The ordering rule and
+                    the reason for the wait are on the row badges and the
+                    week bar already, so saying them again here was three
+                    lines of the facilitator's attention for nothing. */}
                 {notStarted && !isLoading && !error && !bundle.isError && (
                     <p className="px-1 pb-3 text-xs text-muted">
-                        This cohort started less than a week ago, so nobody
-                        is scored yet — the model needs a full week of
-                        activity to read. Everyone is listed below, most
-                        recently active first, so you can still welcome
-                        them and reply to what they post.
+                        No scores until the first week completes.
                     </p>
                 )}
                 {bundle.data === null &&
@@ -401,7 +398,7 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                             riskScore={p.dropout_risk}
                             thresholdLow={p.threshold_low}
                             thresholdHigh={p.threshold_high}
-                            lastActiveLabel={lastActiveLabel(hist)}
+                            lastActiveLabel={lastActiveLabel(hist, now)}
                             selected={selectedId === p.participant_id}
                             onClick={() => select(p.participant_id)}
                             contactedNote={
