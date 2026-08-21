@@ -166,6 +166,13 @@ export function buildProfileLookup(up) {
                 // and what they will search for when they go back to Hope
                 // to reply, so it is the name to display.
                 screenName: profile.screenName ?? null,
+                // The platform's own profile photo. Facilitators
+                // recognise faces on Hope long before they recognise a
+                // screen name, so carrying it lets the queue look like
+                // the Members page they already know. May be absent,
+                // relative, or a dead link — every consumer treats it as
+                // a hint and falls back to initials.
+                imageUrl: profile.imageUrl ?? null,
                 firstName: profile.firstName ?? null,
                 lastName: profile.lastName ?? null,
                 interview: items,
@@ -560,6 +567,7 @@ export function buildCohortBundle(
                 profile,
                 `Joined ${meta.code}. No profile bio submitted yet.`,
             ),
+            imageUrl: profile?.imageUrl ?? null,
             firstName: profile?.firstName ?? null,
             // Self-authored profile Q&A. Empty for most IIH participants
             // (their module has no profile export) — the dashboard treats

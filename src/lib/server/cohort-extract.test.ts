@@ -66,6 +66,7 @@ const userProfiles = {
                 {
                     userId: NAMED_ID,
                     screenName: "Kaz01",
+                    imageUrl: "https://hope.example/u/kaz01.jpg",
                     firstName: "Karen",
                     bio: "",
                     interview: { items: [] },
@@ -167,5 +168,33 @@ describe("buildCohortBundle — what a participant is called", () => {
                 x.participant_id === String(ANONYMOUS_ID),
         );
         expect(p.displayName).toMatch(/^P\d+$/);
+    });
+});
+
+describe("buildCohortBundle — the platform's profile photo", () => {
+    it("carries the image through so the queue can show a face", () => {
+        const p = bundle().participants.find(
+            (x: { participant_id: string }) =>
+                x.participant_id === String(NAMED_ID),
+        );
+        expect(p.imageUrl).toBe("https://hope.example/u/kaz01.jpg");
+    });
+
+    it("is null when the profile has no photo", () => {
+        const p = bundle().participants.find(
+            (x: { participant_id: string }) =>
+                x.participant_id === String(FIRST_NAME_ONLY_ID),
+        );
+        expect(p.imageUrl).toBeNull();
+    });
+
+    it("is null when there is no profile at all", () => {
+        // The normal case for extracted research bundles, whose module
+        // carries no profile export.
+        const p = bundle().participants.find(
+            (x: { participant_id: string }) =>
+                x.participant_id === String(ANONYMOUS_ID),
+        );
+        expect(p.imageUrl).toBeNull();
     });
 });

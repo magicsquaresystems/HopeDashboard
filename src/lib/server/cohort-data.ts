@@ -128,6 +128,10 @@ export type RealParticipant = {
      * `UserProfile (1).txt` has no module 337, so only people who were on
      * an earlier programme have one. Absence is normal. */
     interview: RealInterviewItem[];
+    /** Profile photo as the platform serves it, or null. Never assumed
+     *  to load: extracted research bundles have none, and a live URL can
+     *  still 404. Consumers fall back to initials. */
+    imageUrl: string | null;
     firstName: string | null;
     startedAt: string;
     finishedAt: string | null;

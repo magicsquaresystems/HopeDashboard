@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { CalendarDays, HeartPulse, Quote } from "lucide-react";
 
 import { useCohortBundle } from "@/lib/hooks/useCohortBundle";
@@ -116,6 +116,10 @@ export function ParticipantProfile({
         );
     }, [participant, history]);
 
+    // Frozen at mount so the figure cannot tick over mid-visit and so
+    // the server's HTML matches the first client paint.
+    const [now] = useState(() => Date.now());
+
     if (!participant) return null;
 
     const latest = wellbeing[wellbeing.length - 1];
@@ -125,6 +129,12 @@ export function ParticipantProfile({
     // joined in real time — so it agrees with every other number on the
     // page when replaying an earlier week. Late joiners get credit only
     // from their own start date, hence the offset.
+    //
+    // Capped at the days actually elapsed, for the same reason the
+    // last-active tile is: the selected week closes on day 7, so a
+    // cohort that began this morning reported "day 7 of the programme"
+    // to someone on their first day. A programme cannot be further along
+    // than it has had days to run.
     let dayInProgramme: number | null = null;
     if (history) {
         const joinedMs = new Date(participant.startedAt).getTime();
@@ -133,7 +143,10 @@ export function ParticipantProfile({
             0,
             Math.floor((joinedMs - startMs) / DAY_MS),
         );
-        dayInProgramme = Math.max(0, history.score_at_day - joinOffsetDays);
+        // +1 because the day a cohort starts is day 1, not day 0.
+        const elapsedDay = Math.floor((now - startMs) / DAY_MS) + 1;
+        const reachedDay = Math.min(history.score_at_day, elapsedDay);
+        dayInProgramme = Math.max(1, reachedDay - joinOffsetDays);
     }
 
     const bioShown = !isPlaceholderBio(participant.bio);
