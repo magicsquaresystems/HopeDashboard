@@ -77,5 +77,19 @@ export async function GET(req: NextRequest) {
     return Response.json({
         userProfiles: await shape("/user-profiles", ["modules", "userProfiles"]),
         userActivity: await shape("/user-activity", ["modules", "cohorts", "users"]),
+        // Does an activity carry an id we can reply to, and does a forum
+        // reply carry one? The publish route needs a per-record id, and
+        // forum posts are the case it currently cannot serve.
+        activity: await shape("/user-activity", [
+            "modules",
+            "cohorts",
+            "users",
+            "activities",
+        ]),
+        discussionTopics: await shape("/discussion-topics", ["modules", "topics"]),
+        facilitatorComments: await shape("/facilitator-comments", [
+            "modules",
+            "userActivities",
+        ]),
     });
 }
