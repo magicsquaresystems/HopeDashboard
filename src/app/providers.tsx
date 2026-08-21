@@ -10,7 +10,7 @@ import { SessionProvider } from "next-auth/react";
 import { createContext, useContext, useState, type ReactNode } from "react";
 
 import { ProxyError } from "@/lib/api/proxy-error";
-import { loginPathForError } from "@/lib/session-redirect";
+import { exitPathForError } from "@/lib/session-redirect";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const FIVE_MIN_MS = 5 * 60 * 1000;
@@ -28,13 +28,14 @@ export function useHopeMoveUrl(): string | null {
 }
 
 /**
- * Send the browser back to the login page once, when the session behind
- * it has ended.
+ * Send the browser back to the Facilitator Dashboard once, when the
+ * session behind it has ended.
  *
  * A full navigation rather than a router push, deliberately: every
  * Zustand store, every cached query and every half-typed draft belongs
  * to a session that no longer exists, and a client-side transition would
- * carry all of it into the next one.
+ * carry all of it into the next one. The destination is usually another
+ * origin anyway.
  *
  * The module-level latch is what keeps that from happening several times
  * over. A cohort page has the bundle, the batch, the queue-state poll
@@ -43,9 +44,12 @@ export function useHopeMoveUrl(): string | null {
  */
 let leaving = false;
 
-function leaveIfSessionEnded(error: unknown): void {
+function leaveIfSessionEnded(
+    error: unknown,
+    hopeMoveUrl: string | null,
+): void {
     if (leaving || typeof window === "undefined") return;
-    const path = loginPathForError(error);
+    const path = exitPathForError(error, hopeMoveUrl);
     if (!path) return;
     leaving = true;
     window.location.assign(path);
@@ -64,9 +68,11 @@ export function Providers({
                 // Both caches, because a session can die between a
                 // background poll and a facilitator clicking Snooze, and
                 // whichever notices first should be the one that acts.
-                queryCache: new QueryCache({ onError: leaveIfSessionEnded }),
+                queryCache: new QueryCache({
+                    onError: (e) => leaveIfSessionEnded(e, hopeMoveUrl),
+                }),
                 mutationCache: new MutationCache({
-                    onError: leaveIfSessionEnded,
+                    onError: (e) => leaveIfSessionEnded(e, hopeMoveUrl),
                 }),
                 defaultOptions: {
                     queries: {

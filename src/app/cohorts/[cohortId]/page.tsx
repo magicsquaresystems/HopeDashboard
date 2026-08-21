@@ -2,6 +2,8 @@ import { notFound, redirect } from "next/navigation";
 
 import { auth } from "@/auth";
 import { gateFacilitatorSession } from "@/lib/auth/session-gate";
+import { resolveHopeMoveUrl } from "@/lib/hope-move-url";
+import { exitPath } from "@/lib/session-redirect";
 import {
     cohortsForFacilitator,
     isAssigned,
@@ -35,10 +37,12 @@ export default async function CohortDashboard({
     // fails closed to an empty list, every cohort would 404 at once.
     const gate = gateFacilitatorSession(session);
     if (!gate.ok) {
-        if (gate.code === "hope_session_expired") {
-            redirect("/login?error=session_expired");
-        }
-        notFound();
+        redirect(
+            exitPath(
+                resolveHopeMoveUrl(),
+                gate.code === "hope_session_expired",
+            ),
+        );
     }
     if (!isAssigned(await cohortsForFacilitator(gate.email), cohort.id)) {
         notFound();

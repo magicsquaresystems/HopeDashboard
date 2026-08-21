@@ -4,6 +4,8 @@ import { auth } from "@/auth";
 import { CohortList } from "@/components/cohort-list";
 import { HopeMoveLink } from "@/components/hope-move-link";
 import { gateFacilitatorSession } from "@/lib/auth/session-gate";
+import { resolveHopeMoveUrl } from "@/lib/hope-move-url";
+import { exitPath } from "@/lib/session-redirect";
 import { visibleCohorts } from "@/lib/server/assignments";
 
 /**
@@ -22,9 +24,10 @@ export default async function CohortsIndexPage() {
     const gate = gateFacilitatorSession(session);
     if (!gate.ok) {
         redirect(
-            gate.code === "hope_session_expired"
-                ? "/login?error=session_expired"
-                : "/login",
+            exitPath(
+                resolveHopeMoveUrl(),
+                gate.code === "hope_session_expired",
+            ),
         );
     }
     const email = gate.email;
