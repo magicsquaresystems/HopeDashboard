@@ -90,22 +90,23 @@ describe("openCohort", () => {
 
     it("lands on the cohort's most recent elapsed week", () => {
         // Not a fixed week 6: a six-week cohort used to open on its last
-        // week and a ten-week one four weeks behind where it stood.
-        fresh().openCohort(1731, 9);
-        expect(useScoringStore.getState().scoreAtWeek).toBe(9);
+        // week and a ten-week one four weeks behind where it stood. See
+        // the landing cap below for what happens past MODEL_MAX_WEEK.
+        fresh().openCohort(1731, 7);
+        expect(useScoringStore.getState().scoreAtWeek).toBe(7);
     });
 
     it("does not move a week the facilitator chose themselves", () => {
         // Stepping back to week 3 to see how the cohort looked then must
         // survive the background refresh that follows a few seconds later.
-        fresh().openCohort(1731, 9);
+        fresh().openCohort(1731, 7);
         useScoringStore.getState().setScoreAtWeek(3);
-        useScoringStore.getState().openCohort(1731, 9);
+        useScoringStore.getState().openCohort(1731, 7);
         expect(useScoringStore.getState().scoreAtWeek).toBe(3);
     });
 
     it("lands again when a different cohort is opened", () => {
-        fresh().openCohort(1731, 9);
+        fresh().openCohort(1731, 7);
         useScoringStore.getState().setScoreAtWeek(3);
         useScoringStore.getState().openCohort(1223, 6);
         expect(useScoringStore.getState().scoreAtWeek).toBe(6);
@@ -114,5 +115,32 @@ describe("openCohort", () => {
     it("never lands below week 1, even before a cohort has run a week", () => {
         fresh().openCohort(1800, 0);
         expect(useScoringStore.getState().scoreAtWeek).toBe(1);
+    });
+});
+
+describe("openCohort landing cap", () => {
+    it("never lands past the model's last trained week", () => {
+        // A ten-week span is usually a six-week course left open four
+        // weeks longer. Landing on week 9 would score everyone against
+        // post-course quiet and call a finished cohort high risk — and
+        // the service anchors anything past MODEL_MAX_WEEK back to it
+        // regardless, so the request could not say anything new.
+        useScoringStore.setState({ scoreAtWeek: 6, openCohortId: null });
+        useScoringStore.getState().openCohort(1731, 10);
+        expect(useScoringStore.getState().scoreAtWeek).toBe(MODEL_MAX_WEEK);
+    });
+
+    it("still lands on the real week when a cohort is shorter than the cap", () => {
+        useScoringStore.setState({ scoreAtWeek: 6, openCohortId: null });
+        useScoringStore.getState().openCohort(1743, 3);
+        expect(useScoringStore.getState().scoreAtWeek).toBe(3);
+    });
+
+    it("leaves the later weeks selectable by hand", () => {
+        // Capping the landing must not cap the control.
+        useScoringStore.setState({ scoreAtWeek: 6, openCohortId: null });
+        useScoringStore.getState().openCohort(1731, 10);
+        useScoringStore.getState().setScoreAtWeek(10);
+        expect(useScoringStore.getState().scoreAtWeek).toBe(10);
     });
 });

@@ -169,7 +169,18 @@ export const useScoringStore = create<ScoringState>((set, get) => ({
     setScoreAtWeek: (week) => set({ scoreAtWeek: week }),
     openCohort: (cohortId, maxWeek) => {
         if (get().openCohortId === cohortId) return;
-        set({ openCohortId: cohortId, scoreAtWeek: Math.max(1, maxWeek) });
+        // Capped at the model's last trained week. Two reasons, and the
+        // second is the one that matters. Past MODEL_MAX_WEEK the
+        // service anchors the score back to that week anyway, so landing
+        // there asks a question it cannot answer differently. And a
+        // cohort's end date is when the platform CLOSES it, not when
+        // teaching stopped — observed live, where six-week programmes
+        // carry ten-week spans because they are left open a further
+        // four. Landing on that ninth week would score everyone against
+        // weeks of post-course quiet and report a cohort of people at
+        // high risk of leaving something they had already finished.
+        const landing = Math.min(Math.max(1, maxWeek), MODEL_MAX_WEEK);
+        set({ openCohortId: cohortId, scoreAtWeek: landing });
     },
     clampToAvailable: (maxWeek) => {
         const safe = Math.max(1, maxWeek);
