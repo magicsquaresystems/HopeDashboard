@@ -20,6 +20,11 @@ import { headers } from "next/headers";
 import { getToken } from "next-auth/jwt";
 
 import type { HopeTokens } from "@/lib/auth/hope-token";
+import {
+    classifyHopeLink,
+    type HopeLinkState,
+    type LinkableJwt,
+} from "@/lib/auth/hope-link";
 
 if (typeof window !== "undefined") {
     throw new Error("hope-session.ts must not be imported in browser code");
@@ -60,27 +65,38 @@ async function readSessionJwt(): Promise<Record<string, unknown> | null> {
  * observe the token.
  */
 export async function hopeSession(): Promise<HopeSession | null> {
+    const { session } = await hopeSessionState();
+    return session;
+}
+
+/**
+ * The same read, but saying WHY there is no session.
+ *
+ * `hopeSession()` returns `null` for a hand-off sign-in and for a
+ * platform sign-in whose refresh has failed, and callers that make
+ * access decisions have to tell those apart — see `hope-link.ts` for
+ * what conflating them cost.
+ */
+export async function hopeSessionState(): Promise<{
+    state: HopeLinkState;
+    session: HopeSession | null;
+}> {
     const jwt = await readSessionJwt();
-    if (!jwt) return null;
+    const state = classifyHopeLink(jwt as LinkableJwt);
+    if (state !== "linked") return { state, session: null };
 
-    const hope = jwt.hope as Partial<HopeTokens> | undefined;
-    const hopeUserId = jwt.hopeUserId;
-    if (
-        typeof hopeUserId !== "string" ||
-        !hope ||
-        typeof hope.accessToken !== "string" ||
-        typeof hope.refreshToken !== "string" ||
-        typeof hope.expiresAt !== "number"
-    ) {
-        return null;
-    }
-
+    // Narrowing only — `classifyHopeLink` has already established that
+    // every field is present and of the right type.
+    const hope = jwt!.hope as HopeTokens;
     return {
-        hopeUserId,
-        tokens: {
-            accessToken: hope.accessToken,
-            refreshToken: hope.refreshToken,
-            expiresAt: hope.expiresAt,
+        state,
+        session: {
+            hopeUserId: jwt!.hopeUserId as string,
+            tokens: {
+                accessToken: hope.accessToken,
+                refreshToken: hope.refreshToken,
+                expiresAt: hope.expiresAt,
+            },
         },
     };
 }

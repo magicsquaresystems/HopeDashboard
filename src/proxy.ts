@@ -9,8 +9,14 @@ import { auth } from "@/auth";
  * write silently 401s at the proxy routes. The API routes stay
  * self-gating rather than being redirected here: a fetch that gets a
  * 302 to an HTML login page produces a confusing parse error, whereas
- * the 401 JSON they already return is what `classifyGenerateError` maps
- * to "sign in again".
+ * the 401 JSON they already return is what `classifyGenerateError` and
+ * `friendlyLoadError` turn into a way back to Hope.
+ *
+ * That self-gating is load-bearing, not incidental. This matcher
+ * excludes `/api`, so nothing here protects those routes; they are
+ * guarded by `requireFacilitatorEmail`, which since
+ * `lib/auth/session-gate.ts` refuses a session whose platform link has
+ * died rather than merely checking that some session exists.
  *
  * `auth.ts` is deliberately Edge-safe (the hand-off Credentials provider
  * only, no Node-only modules) so this stays a cheap JWT decode per

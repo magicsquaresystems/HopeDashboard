@@ -17,7 +17,7 @@
 import { createHopeClient } from "@/lib/api/hope";
 import { type CohortMeta } from "@/lib/cohorts";
 import { hopeConfig } from "@/lib/auth/hope-exchange";
-import { hopeSession } from "@/lib/auth/hope-session";
+import { hopeSessionState } from "@/lib/auth/hope-session";
 
 if (typeof window !== "undefined") {
     throw new Error("hope-cohorts.ts must not be imported in client code");
@@ -48,7 +48,15 @@ export async function hopeCohorts(): Promise<CohortMeta[] | null> {
     const config = hopeConfig();
     if (!config) return null;
 
-    const session = await hopeSession();
+    // Three states, not two. `null` hands the caller back to env/database
+    // assignment, which is right for a hand-off session but catastrophic
+    // for a broken one: `cohortsForFacilitator` reads null as "the
+    // platform is not the source here" and, in open mode, lists every
+    // cohort. A facilitator the platform had just refused to renew ended
+    // up seeing MORE than one it still trusted. A broken link returns an
+    // empty list instead — fail closed.
+    const { state, session } = await hopeSessionState();
+    if (state === "broken") return [];
     if (!session) return null;
 
     const cached = cache.get(session.hopeUserId);

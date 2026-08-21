@@ -1,6 +1,7 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { auth } from "@/auth";
+import { gateFacilitatorSession } from "@/lib/auth/session-gate";
 import {
     cohortsForFacilitator,
     isAssigned,
@@ -28,9 +29,18 @@ export default async function CohortDashboard({
     // and "forbidden" confirms it does. `proxy.ts` has already ensured
     // there is a session by the time this renders.
     const session = await auth();
-    const email = session?.user?.email?.toLowerCase();
-    if (!email) notFound();
-    if (!isAssigned(await cohortsForFacilitator(email), cohort.id)) {
+    // A dead platform link is not a missing cohort. `notFound()` here
+    // would tell a facilitator the programme does not exist when the
+    // real answer is that their session ended — and since cohort access
+    // fails closed to an empty list, every cohort would 404 at once.
+    const gate = gateFacilitatorSession(session);
+    if (!gate.ok) {
+        if (gate.code === "hope_session_expired") {
+            redirect("/login?error=session_expired");
+        }
+        notFound();
+    }
+    if (!isAssigned(await cohortsForFacilitator(gate.email), cohort.id)) {
         notFound();
     }
 

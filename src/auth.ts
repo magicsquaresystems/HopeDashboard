@@ -50,7 +50,13 @@ export type AuthMode = "open" | "allowlist";
 
 /** Bounded by the platform's refresh-token lifetime. A session that
  *  outlives the credential it carries is a session that looks live and
- *  fails on every call. */
+ *  fails on every call.
+ *
+ *  This is no longer the thing that ends a session in practice, and it
+ *  is left long on purpose. API routes now refuse a session whose Hope
+ *  link has broken (`lib/auth/session-gate.ts`), so the link dies first
+ *  and the cookie's own expiry is only the outer bound. Shortening it
+ *  would log out facilitators whose link is perfectly healthy. */
 const SESSION_MAX_AGE_S = 30 * 24 * 60 * 60;
 
 /** Providers allowed to create a session. A provider added later must

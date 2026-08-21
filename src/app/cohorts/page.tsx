@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { CohortList } from "@/components/cohort-list";
 import { HopeMoveLink } from "@/components/hope-move-link";
+import { gateFacilitatorSession } from "@/lib/auth/session-gate";
 import { visibleCohorts } from "@/lib/server/assignments";
 
 /**
@@ -12,8 +13,21 @@ import { visibleCohorts } from "@/lib/server/assignments";
  */
 export default async function CohortsIndexPage() {
     const session = await auth();
-    const email = session?.user?.email?.toLowerCase();
-    if (!email) redirect("/login");
+    // The same rule the API routes enforce, so a page render and a fetch
+    // can never disagree about whether this session still works. Without
+    // it, a facilitator whose Hope link had died saw "No cohorts are
+    // assigned to you" — `hopeCohorts()` fails closed to an empty list —
+    // which blames the programme admin for a dead session and sends them
+    // to ask for access they already have.
+    const gate = gateFacilitatorSession(session);
+    if (!gate.ok) {
+        redirect(
+            gate.code === "hope_session_expired"
+                ? "/login?error=session_expired"
+                : "/login",
+        );
+    }
+    const email = gate.email;
 
     const cohorts = await visibleCohorts(email);
 
@@ -43,7 +57,8 @@ export default async function CohortsIndexPage() {
                     </p>
                     <p className="mt-1 text-xs text-muted">
                         Ask the programme admin to add you to a cohort. If
-                        you have just been added, sign out and back in.
+                        you have just been added, open the Insights Hub
+                        again from your Facilitator Dashboard.
                     </p>
                 </div>
             ) : (

@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { ApiError } from "@/lib/api/client";
+import { gateFacilitatorSession } from "@/lib/auth/session-gate";
 
 /**
  * Server-side identity for API routes.
@@ -27,9 +28,14 @@ import { ApiError } from "@/lib/api/client";
  */
 export async function requireFacilitatorEmail(): Promise<string> {
     const session = await auth();
-    const email = session?.user?.email?.toLowerCase();
-    if (!email) {
-        throw new ApiError(401, "Not signed in", "auth_required");
+    // The decision itself lives in `session-gate.ts` so it can be read
+    // and tested without a session, a cookie or a running app. Having a
+    // session is NOT the same as being allowed to use it: a facilitator
+    // whose platform link has died still holds a valid cookie for up to
+    // thirty days, and this used to let them through.
+    const gate = gateFacilitatorSession(session);
+    if (!gate.ok) {
+        throw new ApiError(gate.status, gate.detail, gate.code);
     }
-    return email;
+    return gate.email;
 }

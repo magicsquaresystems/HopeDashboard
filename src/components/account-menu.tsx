@@ -1,27 +1,30 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { signOut } from "next-auth/react";
-import { ChevronDown, ExternalLink, LogOut } from "lucide-react";
+import { ChevronDown, ExternalLink } from "lucide-react";
 
 import { useHopeMoveUrl } from "@/app/providers";
 
 /**
- * Identity and the ways out, as one menu.
+ * Identity and the way back, as one menu.
  *
  * Modelled on the Hope Move platform's own header, which facilitators
- * already know: an avatar opens a dropdown, and LOGOUT sits at the
- * bottom of it. Two things follow from copying that rather than
- * inventing our own.
+ * already know: an avatar opens a dropdown holding who you are and where
+ * you can go.
  *
- * Sign-out stops being a permanent button in the bar. It ends a session
- * mid-draft, and a naked icon beside the account name is one stray
- * click away from doing exactly that; behind a menu it takes intent.
+ * There is deliberately NO sign-out. Nobody signs IN here — a
+ * facilitator arrives from the Facilitator Dashboard on Hope, already
+ * authenticated, and the only place they go afterwards is back to it. A
+ * sign-out offered them a state they could not undo from this side: no
+ * login form exists to return through, so the only recovery was to find
+ * their way back to Hope and start again, which is precisely what "Back
+ * to Facilitator Dashboard" does without ending anything.
  *
- * And the way back to the platform stops competing with it. Both are
- * "leave this screen" actions, so they belong in the same place, with
- * the destructive one last and separated. The cohort picker still
- * carries a prominent back link, since that page is the front door.
+ * It is also no longer the mechanism that ends a session. API routes now
+ * refuse a session whose platform link has died (`session-gate.ts`), and
+ * the query client sends the tab back to the login page when they do, so
+ * a session outlives its platform link by about one poll interval rather
+ * than by the thirty days the cookie allows.
  */
 export function AccountMenu({
     name,
@@ -96,10 +99,9 @@ export function AccountMenu({
                 // A plain panel, not `role="menu"`. That role puts
                 // assistive tech into application mode, where arrow keys
                 // rather than Tab move between items — a contract this
-                // component does not implement, and one that would have
-                // made sign-out unreachable for a screen-reader user now
-                // that the menu is the only route to it. As ordinary
-                // links and buttons, Tab reaches everything.
+                // component does not implement, and one that would make
+                // the link unreachable for a screen-reader user. As an
+                // ordinary link, Tab reaches it.
                 <div
                     id="account-panel"
                     aria-label={`Account: ${name}`}
@@ -131,20 +133,6 @@ export function AccountMenu({
                             Back to Facilitator Dashboard
                         </a>
                     )}
-
-                    <div className="border-t border-border">
-                        <button
-                            type="button"
-                            onClick={() => signOut({ callbackUrl: "/login" })}
-                            className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
-                        >
-                            <LogOut
-                                className="h-3.5 w-3.5 text-muted"
-                                aria-hidden
-                            />
-                            Sign out
-                        </button>
-                    </div>
                 </div>
             )}
         </div>

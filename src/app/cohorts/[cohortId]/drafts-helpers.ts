@@ -107,8 +107,11 @@ export function classifyGenerateError(message: string): GenerateErrorState {
     ) {
         return {
             tone: "auth",
-            title: "Sign in again",
-            body: "Your session expired. Refresh the page and sign in to generate drafts.",
+            title: "Your session has ended",
+            // Not "sign in again": there is no sign-in form to go to.
+            // The Insights Hub is only ever entered from Hope, so that
+            // is the instruction that actually leads somewhere.
+            body: "Open the Insights Hub again from your Facilitator Dashboard on Hope to carry on.",
         };
     }
     // Must precede the 5xx branch below, which would otherwise swallow

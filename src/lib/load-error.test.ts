@@ -43,3 +43,36 @@ describe("friendlyLoadError", () => {
         expect(state.detail).toContain("ECONNREFUSED");
     });
 });
+
+describe("failure kind", () => {
+    it("marks an expired Hope link as a session problem, not an outage", () => {
+        // The distinction drives whether the UI offers a retry or a way
+        // back to Hope. Retrying an expired session fails identically
+        // every time, which reads as the dashboard being broken.
+        const e = friendlyLoadError(
+            "/api/cohort-bundle failed: 401 Your session with Hope has ended. (hope_session_expired)",
+        );
+        expect(e.kind).toBe("session");
+        expect(e.body).not.toMatch(/try again/i);
+        expect(e.body).toMatch(/Facilitator Dashboard/);
+    });
+
+    it("marks a plain 401 as a session problem", () => {
+        expect(friendlyLoadError("/api/x failed: 401 Not signed in").kind).toBe(
+            "session",
+        );
+    });
+
+    it("marks a lost cohort assignment as an access problem", () => {
+        expect(friendlyLoadError("/api/x failed: 403 Forbidden").kind).toBe(
+            "access",
+        );
+    });
+
+    it("marks anything else as an outage, which is the retryable one", () => {
+        expect(friendlyLoadError("/api/x failed: 503 upstream down").kind).toBe(
+            "outage",
+        );
+        expect(friendlyLoadError("Failed to fetch").kind).toBe("outage");
+    });
+});
