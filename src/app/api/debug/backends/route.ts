@@ -95,6 +95,20 @@ export async function GET() {
         // Neither the project nor the database name is a secret, and a
         // deployment pointed at the wrong project is the likeliest
         // misconfiguration. The client email and key never appear here.
+        // Which build is answering, and from which commit.
+        //
+        // Vercel bakes environment variables in at build time, so a
+        // variable added after the running deployment was built has no
+        // effect until something triggers a rebuild. Twice now that has
+        // looked identical to "the value is wrong", and the two have
+        // opposite fixes. This makes them distinguishable: compare the
+        // commit against what was pushed, and the deployment id against
+        // the one the page carries.
+        build: {
+            deploymentId: process.env.VERCEL_DEPLOYMENT_ID ?? null,
+            commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? null,
+            environment: process.env.VERCEL_ENV ?? null,
+        },
         firebaseProjectId: firestoreConfig()?.projectId ?? null,
         // Whether this deployment can post to participants, and where.
         // The route checks dry-run LAST, after every validation gate, so
