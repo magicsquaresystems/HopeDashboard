@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import { postingPolicy } from "@/lib/server/posting-policy";
 import { firestoreConfig, hasFirestore } from "@/lib/server/firestore";
 
 /**
@@ -95,6 +96,26 @@ export async function GET() {
         // deployment pointed at the wrong project is the likeliest
         // misconfiguration. The client email and key never appear here.
         firebaseProjectId: firestoreConfig()?.projectId ?? null,
+        // Whether this deployment can post to participants, and where.
+        // The route checks dry-run LAST, after every validation gate, so
+        // there is no way to discover this state by probing without
+        // sending a real reply — which is the one action that cannot be
+        // undone. Reporting it here is what makes the go-live switch
+        // checkable before it is thrown.
+        posting: (() => {
+            const policy = postingPolicy();
+            return {
+                enabled: policy.enabled,
+                dryRun: policy.dryRun,
+                allow:
+                    policy.allow === "all"
+                        ? "ALL COHORTS"
+                        : {
+                              ids: [...policy.allow.ids],
+                              codes: [...policy.allow.codes],
+                          },
+            };
+        })(),
         queueStateBackend: hasFirestore() ? "firestore" : "files",
         dropout: await probe(dropoutUrl, authHeaders),
         commentGen: await probe(commentGenUrl, authHeaders),
