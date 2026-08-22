@@ -107,6 +107,17 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
     // labelling can never disagree about which one is on screen.
     const unscored = roster.length > 0;
 
+    // Display name per participant, for the search box. Built once from
+    // the bundle rather than via the per-row hook, because the filter
+    // runs over every row on each keystroke.
+    const nameOf = useMemo(() => {
+        const m = new Map<string, string>();
+        for (const p of bundle.data?.participants ?? []) {
+            m.set(p.participant_id, p.displayName);
+        }
+        return (id: string) => m.get(id) ?? "";
+    }, [bundle.data]);
+
     const histLookup = useMemo(() => {
         const m = new Map<string, ParticipantHistory>();
         for (const h of histories) m.set(h.participant_id, h);
@@ -157,9 +168,18 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                 ? true
                 : p.risk_level === filter,
         );
-        const matchesQuery = matchesFilter.filter((p) =>
-            q ? p.participant_id.toLowerCase().includes(q) : true,
-        );
+        // Match on the NAME a facilitator sees, not the platform's
+        // numeric user id. This used to search `participant_id`, which
+        // worked on research bundles only because their P-number alias
+        // happened to be the id. On live cohorts the id is a number
+        // like 103602 and the row says "QueenB" — so typing the name on
+        // the screen found nothing. The id stays searchable for anyone
+        // who has one from elsewhere.
+        const matchesQuery = matchesFilter.filter((p) => {
+            if (!q) return true;
+            const name = nameOf(p.participant_id).toLowerCase();
+            return name.includes(q) || p.participant_id.toLowerCase().includes(q);
+        });
         const visible: typeof matchesQuery = [];
         const hidden: typeof matchesQuery = [];
         for (const p of matchesQuery) {
@@ -170,13 +190,35 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
             else visible.push(p);
         }
         return { visible, hidden };
-    }, [data?.predictions, roster, filter, query, snoozes, dismissals, now]);
+    }, [data?.predictions, roster, filter, query, snoozes, dismissals, now, nameOf]);
+
+    // Follow the selection onto its page. The detail panel's prev/next
+    // arrows walk the whole cohort, and a dozen presses used to leave
+    // the facilitator reading about someone on page 3 while the queue
+    // still showed page 1 — the selected row simply was not on screen.
+    // (A comment here claimed the page followed; it never did.)
+    //
+    // Keyed on the selection CHANGING, not on where it is: pinning the
+    // page to the selection would make the pager useless, because
+    // clicking to page 3 while someone on page 1 stays selected would
+    // snap straight back. Selecting a row from the list is a no-op here
+    // since that row is, by definition, already on the current page.
+    useEffect(() => {
+        if (!selectedId) return;
+        const idx = visible.findIndex((p) => p.participant_id === selectedId);
+        if (idx < 0) return; // hidden, or filtered out — nothing to show
+        /* eslint-disable react-hooks/set-state-in-effect */
+        setPage(Math.floor(idx / PAGE_SIZE));
+        /* eslint-enable react-hooks/set-state-in-effect */
+        // `visible` is deliberately not a dependency: it changes on
+        // every poll and every keystroke, and re-running then would
+        // re-pin the page on a selection that has not moved.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedId]);
 
     // Paginate the visible list. With 51 cohort participants and a page
     // size of 10, you get 6 pages; smaller filtered sets land on a
-    // single page. Currently active participant always lands on its
-    // page when selected from elsewhere — clamp here so the nav never
-    // points past the end.
+    // single page. Clamp so the nav never points past the end.
     const totalPages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
     const safePage = Math.min(page, totalPages - 1);
     const pageStart = safePage * PAGE_SIZE;
@@ -534,6 +576,7 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                                             by={stamp?.by}
                                             at={stamp?.at}
                                             now={now}
+                                            undoing={queueOp.isPending}
                                             onUndo={() =>
                                                 queueOp.mutate({
                                                     op: dismissal
@@ -639,6 +682,7 @@ function HiddenRow({
     at,
     now,
     onUndo,
+    undoing = false,
 }: {
     participantId: string;
     cohortId: number;
@@ -648,6 +692,10 @@ function HiddenRow({
     at?: number;
     now: number;
     onUndo: () => void;
+    /** An undo is in flight for this cohort. Shared rather than per-row
+     *  because `useQueueOp` is one mutation: while it is busy, a second
+     *  click anywhere would queue a second op. */
+    undoing?: boolean;
 }) {
     const alias = useBundleDisplayName(participantId, cohortId);
     return (
@@ -660,12 +708,18 @@ function HiddenRow({
                     {at !== undefined && ` · ${agoLabel(at, now)}`}
                 </span>
             </span>
+            {/* Disabled while the write is out. It was a bare onClick,
+                and a double-tap sent undoSnooze twice — harmless for the
+                store, which is idempotent, but it showed as a row that
+                flickered and then a second failure notice. */}
             <button
                 type="button"
                 onClick={onUndo}
-                className="text-xs text-accent-ink hover:underline"
+                disabled={undoing}
+                aria-busy={undoing || undefined}
+                className="text-xs text-accent-ink hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
             >
-                Undo
+                {undoing ? "Undoing…" : "Undo"}
             </button>
         </li>
     );
