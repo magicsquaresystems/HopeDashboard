@@ -297,8 +297,12 @@ export function Drafts({
      * draft whichever action happened first.
      */
     async function onPublish(text: string) {
-        if (!canPublish || !recentPost?.activityId) return;
-        await publish.mutateAsync({
+        if (!canPublish || !recentPost?.activityId) return undefined;
+        // Returns the route's status so the card can tell a real send
+        // from a dry run. They must not look alike: a dry run delivers
+        // nothing, and a card claiming otherwise is the same lie the
+        // old Send button told.
+        return publish.mutateAsync({
             cohortId: cohort.id,
             activityType: recentPost.activityType,
             recordId: recentPost.activityId,

@@ -87,8 +87,10 @@ type DraftCardProps = {
     /** Whether this reply may be sent to Hope. Decided by the caller
      *  from a server-resolved policy; the card never infers it. */
     canPublish?: boolean;
-    /** Publish the reply. Rejects on failure so the card can say so. */
-    onPublish?: (text: string) => Promise<unknown>;
+    /** Publish the reply. Rejects on failure so the card can say so,
+     *  and resolves with the route's status so a dry run can be told
+     *  apart from a delivered reply. */
+    onPublish?: (text: string) => Promise<{ status?: string } | undefined>;
     /** Why Send is absent, when that is worth explaining. */
     publishBlockedReason?: string | null;
 };
@@ -136,7 +138,7 @@ export function DraftCard({
      * There is no path back from `sent` because there is no unsend.
      */
     const [sendState, setSendState] = useState<
-        "idle" | "confirming" | "sending" | "sent" | "failed"
+        "idle" | "confirming" | "sending" | "sent" | "dry_run" | "failed"
     >("idle");
     const [sendError, setSendError] = useState<string | null>(null);
     const sendRef = useRef<HTMLButtonElement>(null);
@@ -211,9 +213,13 @@ export function DraftCard({
         setSendState("sending");
         setSendError(null);
         try {
-            await onPublish(text);
-            setSendState("sent");
-            if (!usedRef.current) {
+            const result = await onPublish(text);
+            const delivered = result?.status !== "dry_run";
+            setSendState(delivered ? "sent" : "dry_run");
+            // A dry run files no research record and marks nobody
+            // contacted. Both of those tell colleagues this participant
+            // has been answered, and on a dry run nobody has.
+            if (delivered && !usedRef.current) {
                 usedRef.current = true;
                 onUse(String(draft.draft_id), text, edited ? "edit" : "accept");
             }
@@ -421,7 +427,9 @@ export function DraftCard({
                             )}
                             {clipboard.copied ? "Copied" : "Copy reply"}
                         </Button>
-                        {canPublish && sendState !== "sent" && (
+                        {canPublish &&
+                            sendState !== "sent" &&
+                            sendState !== "dry_run" && (
                             <Button
                                 ref={sendRef}
                                 size="sm"
@@ -447,6 +455,18 @@ export function DraftCard({
                             >
                                 <Check className="h-3.5 w-3.5" aria-hidden />
                                 Sent to Hope
+                            </Button>
+                        )}
+                        {sendState === "dry_run" && (
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled
+                                className="gap-1.5"
+                                title="Every check passed and the reply was built, but this deployment is in dry-run mode so nothing was delivered."
+                            >
+                                <Check className="h-3.5 w-3.5" aria-hidden />
+                                Dry run — not sent
                             </Button>
                         )}
                     </div>
@@ -493,6 +513,14 @@ export function DraftCard({
                             </Button>
                         </div>
                     </div>
+                )}
+                {sendState === "dry_run" && (
+                    <p className="border-t border-border px-3 py-1.5 text-xs text-risk-md">
+                        Dry run: every check passed and the reply was
+                        built, but this deployment is set not to deliver.
+                        {" "}{firstName} has not received anything, and
+                        nobody has been marked as contacted.
+                    </p>
                 )}
                 {sendState === "sending" && (
                     <p className="border-t border-border px-3 py-1.5 text-xs text-muted">
