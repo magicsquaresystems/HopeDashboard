@@ -32,6 +32,7 @@ import { useCohortBundle } from "@/lib/hooks/useCohortBundle";
 import { useQueueOp } from "@/lib/hooks/useQueueState";
 import { bundleToHistory, renderThreadContext } from "@/lib/realCohort";
 import { usePublishComment } from "@/lib/hooks/api";
+import { postTextForModel } from "@/lib/post-text";
 import {
     scoreAtDay as scoreAtDayForWeek,
     useScoringStore,
@@ -126,7 +127,14 @@ export function Drafts({
     // Drafts column reads its inputs directly from the most recent
     // platform post — no facilitator pasting. activityType comes from
     // the post itself; postText is the post's description.
-    const postText: string = recentPost?.text ?? "";
+    // What the model reads, not what the facilitator sees. The card and
+    // the timeline show the platform's record verbatim; the model gets
+    // the participant's own words with the platform's goal template
+    // stripped off — see post-text.ts for what that template did to the
+    // drafts.
+    const postText: string = recentPost
+        ? postTextForModel(recentPost.activityType, recentPost.text)
+        : "";
     const activityType: ActivityType =
         recentPost?.activityType ?? "GoalSetting";
     const isDiscussionTarget = recentPost?.isDiscussion ?? false;
