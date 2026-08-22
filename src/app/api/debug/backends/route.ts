@@ -1,5 +1,4 @@
-import { type NextRequest } from "next/server";
-
+import { auth } from "@/auth";
 import { firestoreConfig, hasFirestore } from "@/lib/server/firestore";
 
 /**
@@ -17,7 +16,24 @@ import { firestoreConfig, hasFirestore } from "@/lib/server/firestore";
  * are returned in full because they are not secret and a wrong one is
  * the likeliest misconfiguration.
  */
-const GATE_KEY = "caf8de47164c272f8a5eae2bf05b8e00";
+/**
+ * Facilitator session, not a shared key.
+ *
+ * This route was gated on a hardcoded key. The repository is public, so
+ * the key was published with it — anyone who read the source could ask
+ * production which variables were set, how long each secret was, which
+ * Firebase project backed it, and whether the backends were reachable.
+ * No values and no participant data, but a complete map of the
+ * deployment handed to whoever wanted one.
+ *
+ * A session is the right gate: the people who need this are signed-in
+ * staff, and it cannot be published by accident because there is
+ * nothing to publish.
+ */
+async function isSignedIn(): Promise<boolean> {
+    const session = await auth();
+    return Boolean(session?.user?.email);
+}
 
 function describeSecret(value: string | undefined) {
     const trimmed = value?.trim();
@@ -42,8 +58,10 @@ async function probe(
     }
 }
 
-export async function GET(req: NextRequest) {
-    if (req.nextUrl.searchParams.get("key") !== GATE_KEY) {
+export async function GET() {
+    // 404, not 403: an unauthenticated caller learns nothing, not even
+    // that this route exists.
+    if (!(await isSignedIn())) {
         return new Response(null, { status: 404 });
     }
 
