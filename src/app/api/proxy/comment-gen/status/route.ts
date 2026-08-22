@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { commentGen } from "@/lib/api/server";
+import { requireFacilitatorEmail } from "@/lib/auth/facilitator";
 import { withApiErrors } from "../../_errors";
 
 /**
@@ -27,6 +28,12 @@ import { withApiErrors } from "../../_errors";
  * for a signed-in facilitator, so nothing in the UI would notice.
  */
 export const GET = withApiErrors(async () => {
+    // Session-gated, for two reasons neither of which is the data. The
+    // response names the production model, which is a private
+    // repository and need not be advertised; and the health call behind
+    // it wakes the GPU Space, so an anonymous caller hitting this in a
+    // loop was a free way to spend the programme's compute credit.
+    await requireFacilitatorEmail();
     const client = commentGen();
     const [version, health] = await Promise.all([
         client.version(),
