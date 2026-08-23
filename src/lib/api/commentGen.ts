@@ -2,13 +2,16 @@
  * Typed client for the comment_generation FastAPI service.
  *
  * Spec: ../comment_generation/docs/openapi.yaml
- * Default base URL: http://localhost:8001
+ *
+ * The base URL is the caller's to supply — `lib/api/server.ts` reads it
+ * from `COMMENT_GEN_URL` and refuses to start without one. There used to
+ * be a `NEXT_PUBLIC_COMMENT_GEN_URL` fallback here, which no call site
+ * ever reached and which, being `NEXT_PUBLIC_`, was inlined into the
+ * browser bundle: a private Space hostname shipped to every visitor for
+ * the sake of a default nothing used.
  */
 
 import { createClient, type ApiClientOptions, type Schemas } from "./client";
-
-const DEFAULT_BASE_URL =
-    process.env.NEXT_PUBLIC_COMMENT_GEN_URL ?? "http://localhost:8001";
 
 // The service dropped its pre-`RichGenerateRequest` body shape, so this is
 // no longer a union — `LegacyGenerateRequest` left the spec and the alias
@@ -51,10 +54,10 @@ export type TextGenResponse = {
 };
 
 export function createCommentGenClient(
-    opts: Partial<ApiClientOptions> = {},
+    opts: Partial<ApiClientOptions> & Pick<ApiClientOptions, "baseUrl">,
 ) {
     const { request } = createClient({
-        baseUrl: opts.baseUrl ?? DEFAULT_BASE_URL,
+        baseUrl: opts.baseUrl,
         sign: opts.sign,
         // Forward the HF token so the comment-gen client can hit a
         // PRIVATE HF Space. Without this, the gateway returns 404

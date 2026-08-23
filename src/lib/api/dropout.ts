@@ -17,8 +17,9 @@
 
 import { createClient, type ApiClientOptions } from "./client";
 
-const DEFAULT_BASE_URL =
-    process.env.NEXT_PUBLIC_DROPOUT_API_URL ?? "http://localhost:8000";
+// No default base URL, on purpose. `lib/api/server.ts` supplies it from
+// `DROPOUT_API_URL`; see the note in commentGen.ts for why the
+// `NEXT_PUBLIC_` fallback that used to live here was removed.
 
 export type RiskLevel = "low" | "medium" | "high";
 
@@ -172,9 +173,11 @@ export type ModelInfo = {
     limitations: string[];
 };
 
-export function createDropoutClient(opts: Partial<ApiClientOptions> = {}) {
+export function createDropoutClient(
+    opts: Partial<ApiClientOptions> & Pick<ApiClientOptions, "baseUrl">,
+) {
     const { request } = createClient({
-        baseUrl: opts.baseUrl ?? DEFAULT_BASE_URL,
+        baseUrl: opts.baseUrl,
         apiKey: opts.apiKey,
         authToken: opts.authToken,
         cookie: opts.cookie,
