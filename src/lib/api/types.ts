@@ -1165,6 +1165,19 @@ export interface components {
              * @default 0
              */
             generation_queue_depth: number;
+            /**
+             * @description Whether drafts are being checked against the post they answer.
+             *
+             *     `unavailable` is the one worth alerting on. The check is
+             *     switched on and cannot run — the judge needs the model's base
+             *     weights and this deployment has none it can reach — so every
+             *     draft comes back `unchecked` while the deployment believes it
+             *     is protected. The check fails soft by design, so nothing else
+             *     would ever report this.
+             * @default off
+             * @enum {string}
+             */
+            grounding_check: "off" | "on" | "unavailable";
             /** Format: date-time */
             timestamp?: string;
         };

@@ -301,6 +301,13 @@ export type CommentGenStatus = {
     service_version: string;
     /** Null when the service omits the field (older build). */
     model_loaded: boolean | null;
+    /**
+     * Whether drafts are being checked against the post they answer.
+     * `"unavailable"` is the state worth acting on: the check is switched
+     * on and cannot run, so every draft comes back unchecked while the
+     * deployment believes it is protected. Null on builds predating it.
+     */
+    grounding_check: "off" | "on" | "unavailable" | null;
     status: "healthy" | "degraded";
 };
 

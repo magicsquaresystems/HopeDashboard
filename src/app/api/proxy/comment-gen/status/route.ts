@@ -43,6 +43,14 @@ export const GET = withApiErrors(async () => {
         model_version: version.model_version,
         service_version: version.service_version,
         model_loaded: health.model_loaded ?? null,
+        // Whether drafts are being checked against the post they answer.
+        // Forwarded but not rendered: the per-draft disclosure already
+        // tells a facilitator when a draft was not checked, and a chip
+        // saying so on every screen would be ops language in a clinical
+        // interface. It is here so the state is observable at all —
+        // "unavailable" means the check is switched on and silently doing
+        // nothing, and it fails soft, so nothing else would ever say so.
+        grounding_check: health.grounding_check ?? null,
         status: health.status,
     });
 });
