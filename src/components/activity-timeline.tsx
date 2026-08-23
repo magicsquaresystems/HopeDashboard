@@ -13,7 +13,7 @@ import {
 
 import { EmptyState } from "@/components/empty-state";
 import type { EventRecord, ParticipantHistory } from "@/lib/api/dropout";
-import { DAY_MS, scoreWindowEnd } from "@/lib/signals";
+import { DAY_MS, signalClock } from "@/lib/signals";
 import { useUiStore } from "@/lib/store/uiStore";
 
 /**
@@ -432,14 +432,16 @@ export function ActivityTimeline({
     history: ParticipantHistory;
 }) {
     const [expanded, setExpanded] = useState(false);
-    // The selected scoring week's clock, not the wall clock — the same
-    // anchor every other number on the page measures against. A wall
-    // clock here made the timeline say "29d ago" while the detail tile,
-    // correctly, called the same participant active that week (the exact
-    // bug fixed once already in drafts.tsx for post age).
+    // The page's one clock (`signalClock`): the selected week's window end,
+    // or the wall clock while that window is still open. A bare wall
+    // clock here once said "29d ago" for a replayed week; a bare window
+    // end said "7d ago" for a post from two days before, in a cohort's
+    // first week. Read the wall clock once per mount so server and client
+    // agree at a day boundary.
+    const [wallClock] = useState(() => Date.now());
     const now = useMemo(
-        () => new Date(scoreWindowEnd(history)),
-        [history],
+        () => new Date(signalClock(history, wallClock)),
+        [history, wallClock],
     );
     const selectedPostTs = useUiStore((s) => s.selectedPostTs);
     const selectPost = useUiStore((s) => s.selectPost);

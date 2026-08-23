@@ -8,7 +8,7 @@
  * walking the UI.
  */
 
-import { DAY_MS, scoreWindowEnd } from "@/lib/signals";
+import { DAY_MS, signalClock } from "@/lib/signals";
 import type { ParticipantHistory } from "@/lib/api/dropout";
 import type { ActivityType, Draft } from "@/lib/api/commentGen";
 
@@ -194,6 +194,7 @@ export type ReplyTarget = {
 export function pickReplyTarget(
     history: ParticipantHistory,
     selectedPostTs: string | null,
+    nowMs: number = Date.now(),
 ): ReplyTarget | null {
     const draftable = (e: ParticipantHistory["events"][number]) =>
         typeof e.description === "string" &&
@@ -225,13 +226,13 @@ export function pickReplyTarget(
     const latest = picked ?? acts[0];
     if (!latest) return null;
 
-    // Age is measured against the end of the scoring window, not the
-    // wall clock — the same reference every other signal on the page
-    // uses. Anchoring to Date.now() made the panel claim a post was
-    // "137d ago" while the detail panel, correctly, called the same
-    // participant active that week.
-    const ageMs =
-        scoreWindowEnd(history) - new Date(latest.timestamp).getTime();
+    // Age is measured against the page's one clock (`signalClock`): the
+    // scoring window's end, or the wall clock while that window is still
+    // open. Bare Date.now() once made this say "137d ago" for a replayed
+    // week; bare window-end made it say "6d ago" for yesterday's post in
+    // a cohort's first week. Both were the same mistake from opposite
+    // sides.
+    const ageMs = signalClock(history, nowMs) - new Date(latest.timestamp).getTime();
     const daysAgo = Math.max(0, Math.floor(ageMs / DAY_MS));
     const isDiscussion = latest.event_type === "discussion_post";
     // An empty string is not a known type: it would render a blank

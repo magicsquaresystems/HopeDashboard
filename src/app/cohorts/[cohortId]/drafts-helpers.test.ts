@@ -10,6 +10,7 @@ import {
     publishBlockedReason,
 } from "./drafts-helpers";
 import type { ParticipantHistory } from "@/lib/api/dropout";
+import { DAY_MS } from "@/lib/signals";
 
 /**
  * Ordering is the whole point of these tests. A busy 503 and an offline
@@ -482,5 +483,33 @@ describe("draftWarnings", () => {
             expect(text).not.toMatch(/matches\)|ratio is|imperatives/);
             expect(text).not.toMatch(/ungrounded|mi_violations/);
         }
+    });
+});
+
+
+describe("pickReplyTarget in a cohort's first week", () => {
+    it("ages the post from today, not from a window end that has not arrived", () => {
+        // Cohort started two days ago; scoring window is day 7, five days
+        // ahead. The participant posted yesterday. Anchored to the window
+        // end this read "6d ago" — the bug seen live on cohort 1743.
+        const start = Date.parse("2026-08-21T00:00:00Z");
+        const now = start + 2 * DAY_MS;
+        const h: ParticipantHistory = {
+            participant_id: "103603",
+            effective_start: "2026-08-21T00:00:00Z",
+            score_at_day: 7,
+            cohort_size: 3,
+            programme_length_days: 49,
+            events: [
+                {
+                    timestamp: new Date(now - DAY_MS).toISOString(),
+                    event_type: "activity",
+                    activity_type: "GoalSetting",
+                    description: "I want to walk to the end of my road and back.",
+                    activity_id: 41313,
+                },
+            ],
+        };
+        expect(pickReplyTarget(h, null, now)?.daysAgo).toBe(1);
     });
 });

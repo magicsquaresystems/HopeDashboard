@@ -34,6 +34,30 @@ export function scoreWindowEnd(history: ParticipantHistory): number {
     );
 }
 
+/**
+ * The instant "how long ago" is measured from: the window end, unless
+ * that has not arrived yet, in which case the wall clock.
+ *
+ * `scoreWindowEnd` is the right anchor for a week being replayed, and
+ * its docblock assumes that under a live feed it sits within a day of
+ * now. That holds from the second week on. In a cohort's first week the
+ * window closes up to seven days in the future, and anything measured
+ * against it ages by the days that have not happened: a post from
+ * yesterday read "6d ago" in the drafts panel and "7d ago" on the
+ * timeline while the queue, on the wall clock, said "1 day ago". Two
+ * clocks on one page, which is the exact thing the window-end anchor
+ * exists to prevent.
+ *
+ * `nowMs` is a parameter rather than `Date.now()` read here so callers
+ * can hold one value across a render (hydration) and tests can pin it.
+ */
+export function signalClock(
+    history: ParticipantHistory,
+    nowMs: number = Date.now(),
+): number {
+    return Math.min(scoreWindowEnd(history), nowMs);
+}
+
 function sortedTimestamps(history: ParticipantHistory): number[] {
     return history.events
         .map((e) => new Date(e.timestamp).getTime())
@@ -65,7 +89,7 @@ export function daysSinceLastEvent(
     const stamps = sortedTimestamps(history);
     if (stamps.length === 0) return null;
     const last = stamps[stamps.length - 1];
-    const end = Math.min(scoreWindowEnd(history), now);
+    const end = signalClock(history, now);
     return Math.max(0, Math.floor((end - last) / DAY_MS));
 }
 

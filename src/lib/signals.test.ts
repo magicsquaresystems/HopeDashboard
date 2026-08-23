@@ -5,6 +5,7 @@ import {
     eventsLastNDays,
     lastActiveLabel,
     scoreWindowEnd,
+    signalClock,
 } from "./signals";
 import type { EventRecord, ParticipantHistory } from "@/lib/api/dropout";
 
@@ -146,5 +147,26 @@ describe("daysSinceLastEvent — a window that has not closed yet", () => {
         expect(daysSinceLastEvent(history("2026-08-21T00:00:00Z"), later)).toBe(
             7,
         );
+    });
+});
+
+
+/**
+ * The first-week case. `scoreWindowEnd` sits up to seven days in the
+ * future while a cohort's first week is running, and everything measured
+ * against it aged by days that had not happened: yesterday's post read
+ * "6d ago" in the drafts panel while the queue said "1 day ago".
+ */
+describe("signalClock", () => {
+    it("is the window end once that week has passed", () => {
+        const h = history([], 21);
+        const later = Date.parse(START) + 40 * DAY;
+        expect(signalClock(h, later)).toBe(scoreWindowEnd(h));
+    });
+
+    it("is the wall clock while the window is still open", () => {
+        const h = history([], 7);
+        const duringWeekOne = Date.parse(START) + 2 * DAY;
+        expect(signalClock(h, duringWeekOne)).toBe(duringWeekOne);
     });
 });

@@ -119,9 +119,12 @@ export function Drafts({
     // owns the Emotions filter — for explicit timeline picks too — and
     // the `typeKnown` flag that keeps a defaulted activity type off the
     // screen.
+    // Read once per mount, like detail.tsx: Date.now() during render makes
+    // server HTML and the client's first paint disagree at a day boundary.
+    const [now] = useState(() => Date.now());
     const recentPost = useMemo(
-        () => (history ? pickReplyTarget(history, selectedPostTs) : null),
-        [history, selectedPostTs],
+        () => (history ? pickReplyTarget(history, selectedPostTs, now) : null),
+        [history, selectedPostTs, now],
     );
 
     // Drafts column reads its inputs directly from the most recent
