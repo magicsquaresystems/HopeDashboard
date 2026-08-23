@@ -165,10 +165,26 @@ export const POST = withApiErrors(async (req: NextRequest) => {
         return NextResponse.json({ status: "dry_run" });
     }
 
-    await createHopeClient({
-        baseUrl: config.apiUrl,
-        accessToken: session.tokens.accessToken,
-    }).postComment({ cohortId, activityType, recordId, comment });
+    try {
+        await createHopeClient({
+            baseUrl: config.apiUrl,
+            accessToken: session.tokens.accessToken,
+        }).postComment({ cohortId, activityType, recordId, comment });
+    } catch (err) {
+        // The platform's reason belongs in the deployment log as well as
+        // on the screen. The first real send came back "400 Bad Request"
+        // and nothing more, in both places; whoever reads this next
+        // should not have to reproduce the failure to learn what it was.
+        if (err instanceof ApiError) {
+            console.error(
+                `hope comment rejected: cohort=${cohortId} ` +
+                    `activity=${activityType}#${recordId} by=${email} ` +
+                    `status=${err.status} code=${err.code ?? "-"} ` +
+                    `detail=${JSON.stringify(err.detail)}`,
+            );
+        }
+        throw err;
+    }
 
     // Logged deliberately: this is an irreversible outward action, and
     // the record of who published what should not live only in the

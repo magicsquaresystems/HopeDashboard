@@ -49,6 +49,79 @@ export class ApiError extends Error {
     }
 }
 
+/**
+ * Turn a non-2xx upstream response into an `ApiError` without losing
+ * the reason.
+ *
+ * This used to read only our own services' shape, `{ detail, code }`,
+ * and fall back to `statusText` for anything else. The Hope platform is
+ * not one of our services: its `ApiError(...)` helper and ASP.NET's own
+ * `HttpError` both use different field names, so a platform 400 arrived
+ * in the dashboard as the two words "Bad Request" and nothing else — the
+ * sentence that said what was wrong had been thrown away one hop from
+ * the screen. A send that fails with no reason cannot be fixed by the
+ * person looking at it, or by anyone they ask.
+ *
+ * Keys are matched case-insensitively because the same C# property
+ * reaches the wire as `Message` or `message` depending on the
+ * serializer's naming policy, which this codebase has already been
+ * bitten by once (see `hope.ts`). Shapes recognised:
+ *
+ *   - ours:              { detail, code }
+ *   - Hope `ApiError`:   { code | errorCode, message, data }
+ *   - ASP.NET HttpError: { Message, MessageDetail, ExceptionMessage }
+ *   - RFC 7807:          { title, detail, errors }
+ *   - anything else:     the raw body, truncated
+ *
+ * Exported for its tests; nothing else should need it.
+ */
+export async function upstreamError(res: Response): Promise<ApiError> {
+    const raw = await res.text().catch(() => "");
+    let detail = raw.trim() || res.statusText || `HTTP ${res.status}`;
+    let code: string | undefined;
+
+    if (raw.trim()) {
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(raw);
+        } catch {
+            parsed = undefined;
+        }
+        if (parsed && typeof parsed === "object") {
+            const fields = new Map<string, unknown>();
+            for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+                fields.set(k.toLowerCase(), v);
+            }
+            const text = (...keys: string[]): string | undefined => {
+                for (const k of keys) {
+                    const v = fields.get(k);
+                    if (typeof v === "string" && v.trim()) return v.trim();
+                }
+                return undefined;
+            };
+            const message = text(
+                "detail",
+                "message",
+                "messagedetail",
+                "exceptionmessage",
+                "title",
+                "error",
+            );
+            const extra = text("messagedetail");
+            detail =
+                message && extra && extra !== message
+                    ? `${message} ${extra}`
+                    : (message ?? detail);
+            code = text("code", "errorcode");
+        }
+    }
+
+    // A gateway's HTML page, or a stack trace: keep enough to recognise
+    // it, not enough to flood a log line or a disclosure.
+    if (detail.length > 400) detail = `${detail.slice(0, 400)}…`;
+    return new ApiError(res.status, detail, code);
+}
+
 type RequestOptions = {
     method?: "GET" | "POST" | "DELETE";
     path: string;
@@ -138,16 +211,7 @@ export function createClient(opts: ApiClientOptions) {
         });
 
         if (!res.ok) {
-            let detail = res.statusText;
-            let code: string | undefined;
-            try {
-                const err = (await res.json()) as Schemas["ErrorResponse"];
-                detail = err.detail ?? detail;
-                code = err.code ?? undefined;
-            } catch {
-                /* response had no JSON body */
-            }
-            throw new ApiError(res.status, detail, code);
+            throw await upstreamError(res);
         }
 
         if (res.status === 204) return undefined as T;
