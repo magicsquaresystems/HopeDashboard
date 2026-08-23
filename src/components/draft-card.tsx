@@ -18,7 +18,10 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useCopyToClipboard } from "@/lib/hooks/useCopyToClipboard";
 import { usePolishText } from "@/lib/hooks/api";
-import { friendlyPublishError } from "@/app/cohorts/[cohortId]/drafts-helpers";
+import {
+    draftWarnings,
+    friendlyPublishError,
+} from "@/app/cohorts/[cohortId]/drafts-helpers";
 import { cn } from "@/lib/utils";
 import type { Draft } from "@/lib/api/commentGen";
 
@@ -265,6 +268,11 @@ export function DraftCard({
     // answering.
     const firstName = toName.split(/\s+/)[0] || toName;
     const chars = text.length;
+    // Warnings describe the draft the service produced, not the text in
+    // the box: once a facilitator edits it the checks no longer apply to
+    // what is on screen. Keeping them visible is still right — they say
+    // what to look at, and the edit may not have touched it.
+    const warnings = draftWarnings(draft);
 
     return (
         <div className="space-y-3">
@@ -297,6 +305,20 @@ export function DraftCard({
                     aria-label="Draft body"
                     className="rounded-none border-0 bg-transparent px-3 py-2.5 text-sm leading-relaxed text-text focus-visible:ring-0"
                 />
+
+                {warnings.length > 0 && (
+                    <div
+                        role="status"
+                        className="space-y-1.5 border-t border-risk-md bg-risk-md-bg px-3 py-2 text-xs text-risk-md"
+                    >
+                        {warnings.map((w) => (
+                            <p key={w.id} className="leading-relaxed">
+                                <span className="font-medium">{w.title}.</span>{" "}
+                                {w.body}
+                            </p>
+                        ))}
+                    </div>
+                )}
 
                 {(polishShadow !== null || polishError) && (
                     <div className="flex items-center justify-between gap-2 border-t border-border bg-surface-2/40 px-3 py-1.5 text-xs">
@@ -487,6 +509,18 @@ export function DraftCard({
                             under their post on Hope, and they may get a
                             notification. You can&apos;t take it back.
                         </p>
+                        {/* Restated here on purpose. The warning strip sits
+                            above the fold of a long draft, and this is the
+                            last moment the facilitator can still stop. */}
+                        {warnings.length > 0 && (
+                            <p className="text-xs leading-relaxed text-risk-md">
+                                {warnings.length === 1
+                                    ? `One thing to check first: ${warnings[0].title.toLowerCase()}.`
+                                    : `${warnings.length} things to check first: ${warnings
+                                          .map((w) => w.title.toLowerCase())
+                                          .join("; ")}.`}
+                            </p>
+                        )}
                         <div className="flex flex-wrap gap-2">
                             <Button
                                 size="sm"
@@ -643,6 +677,21 @@ export function DraftCard({
                             {context.engagementUsed
                                 ? "used"
                                 : "not available"}
+                        </div>
+                        <div>
+                            <span className="font-medium text-text-2">
+                                Checked against their post:
+                            </span>{" "}
+                            {/* "unchecked" earns a line here even though it
+                                gets no warning strip. This is where a
+                                facilitator comes to ask what the app did,
+                                and "we could not check" is an answer they
+                                are entitled to. */}
+                            {draft.grounding === "grounded"
+                                ? "yes, nothing in it goes beyond what they wrote"
+                                : draft.grounding === "ungrounded"
+                                  ? "it may mention something their post does not say"
+                                  : "not checked"}
                         </div>
                         <p className="mt-1.5 italic">
                             Drafts are suggestions. Review before you paste

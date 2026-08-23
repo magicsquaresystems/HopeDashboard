@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
     canPublishReply,
     classifyGenerateError,
+    draftWarnings,
     formatModelLabel,
     friendlyPublishError,
     pickReplyTarget,
@@ -376,6 +377,97 @@ describe("friendlyPublishError", () => {
             expect(text).not.toMatch(/\/api\//);
             expect(text).not.toMatch(/HOPE_[A-Z_]+/);
             expect(text).not.toMatch(/\b(400|401|403|502|503)\b/);
+        }
+    });
+});
+
+/**
+ * The warning strip is the only place two safety checks reach a
+ * facilitator, and both fail quietly: an MI violation the service could
+ * not repair, and a draft that mentions something the post never said.
+ * Neither blocks sending, so if the copy is wrong or missing the draft
+ * goes out as if it were clean.
+ */
+describe("draftWarnings", () => {
+    it("says nothing about a clean draft", () => {
+        expect(draftWarnings({ mi_violations: [], grounding: "grounded" })).toEqual([]);
+        expect(draftWarnings({ mi_violations: null, grounding: null })).toEqual([]);
+    });
+
+    it("stays silent when the check did not run", () => {
+        // "unchecked" is not an approval, but a warning on every draft
+        // teaches facilitators to ignore the strip. See the docblock.
+        expect(draftWarnings({ mi_violations: [], grounding: "unchecked" })).toEqual([]);
+    });
+
+    it("warns that an ungrounded draft may have invented something", () => {
+        const [warning] = draftWarnings({ mi_violations: [], grounding: "ungrounded" });
+        expect(warning.id).toBe("grounding");
+        // The point of the copy is the action, not the verdict: a
+        // facilitator can only judge this by looking at the post.
+        expect(warning.body.toLowerCase()).toContain("post");
+    });
+
+    it("puts grounding first, because a skim would miss it", () => {
+        const warnings = draftWarnings({
+            mi_violations: ["contains 1 URL(s): facilitators do not share external links."],
+            grounding: "ungrounded",
+        });
+        expect(warnings.map((w) => w.id)).toEqual(["grounding", "mi-url"]);
+    });
+
+    it("translates each MI violation the scorer can produce", () => {
+        // Verbatim from src/safety/mi_scorer.py — if those strings change,
+        // this test fails rather than the interface silently falling back
+        // to "Needs a second look" for everything.
+        const cases: [string, string][] = [
+            ["diagnostic language (2 matches): facilitators do not diagnose.", "mi-diagnostic"],
+            ["medication/dosage mention (1 matches): outside facilitator scope.", "mi-medication"],
+            ["contains 1 URL(s): facilitators do not share external links.", "mi-url"],
+            ["too prescriptive (3 imperatives) for a flagged input.", "mi-prescriptive"],
+            ["uses 'Why' question (1 times); HOPE guide flags this as judgmental.", "mi-why"],
+            ["reflection:question ratio is 0.20 (< 0.5); too interrogative for a distressed participant.", "mi-ratio"],
+        ];
+        for (const [violation, id] of cases) {
+            const warnings = draftWarnings({ mi_violations: [violation], grounding: null });
+            expect(warnings.map((w) => w.id)).toEqual([id]);
+        }
+    });
+
+    it("still warns about a violation it does not recognise", () => {
+        const warnings = draftWarnings({
+            mi_violations: ["some new rule nobody has mapped yet"],
+            grounding: null,
+        });
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0].id).toBe("mi-other");
+    });
+
+    it("collapses repeats of the same kind into one warning", () => {
+        const warnings = draftWarnings({
+            mi_violations: [
+                "contains 1 URL(s): facilitators do not share external links.",
+                "contains 2 URL(s): facilitators do not share external links.",
+            ],
+            grounding: null,
+        });
+        expect(warnings).toHaveLength(1);
+    });
+
+    it("keeps developer wording out of the copy", () => {
+        const warnings = draftWarnings({
+            mi_violations: [
+                "diagnostic language (2 matches): facilitators do not diagnose.",
+                "reflection:question ratio is 0.20 (< 0.5); too interrogative for a distressed participant.",
+            ],
+            grounding: "ungrounded",
+        });
+        for (const { title, body } of warnings) {
+            const text = `${title} ${body}`;
+            expect(text).not.toMatch(/HOPE_[A-Z_]+/);
+            expect(text).not.toMatch(/\/api\//);
+            expect(text).not.toMatch(/matches\)|ratio is|imperatives/);
+            expect(text).not.toMatch(/ungrounded|mi_violations/);
         }
     });
 });

@@ -34,6 +34,11 @@ export interface paths {
          *        keeping the attempt with the fewest violations. Any violation
          *        that still survives is returned in the draft's `mi_violations`
          *        so the dashboard can warn; the draft is not silently dropped.
+         *     6. Grounding check (when `HOPE_GROUNDING_CHECK=1`) — the model judges
+         *        each draft against the post. A draft that mentions something the
+         *        post does not say is regenerated within the same repair budget;
+         *        one that is still ungrounded is returned with
+         *        `grounding: ungrounded` rather than dropped.
          */
         post: {
             parameters: {
@@ -59,6 +64,28 @@ export interface paths {
                 };
                 401: components["responses"]["Unauthorized"];
                 422: components["responses"]["ValidationError"];
+                /**
+                 * @description The decode queue is full. One process serves one model, so
+                 *     requests are serialized; past `HOPE_GEN_MAX_QUEUE` waiters
+                 *     the service refuses rather than queueing invisibly. Clients
+                 *     should retry — `code` is `generation_busy`, distinguishing
+                 *     this from an unavailable service, and `Retry-After` suggests
+                 *     how long to wait.
+                 */
+                503: {
+                    headers: {
+                        /** @description Suggested seconds before retrying. */
+                        "Retry-After"?: number;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            detail?: string;
+                            /** @enum {string} */
+                            code?: "generation_busy";
+                        };
+                    };
+                };
             };
         };
         delete?: never;
@@ -625,6 +652,14 @@ export interface paths {
                                 model_id?: string;
                                 label?: string;
                             }[];
+                            /**
+                             * @description True when the deployment sets `HOPE_MODEL_LOCKED`.
+                             *     The adapter is fixed: `POST /admin/model` returns
+                             *     409, and the dashboard renders a read-only model
+                             *     label instead of a picker.
+                             * @default false
+                             */
+                            pinned: boolean;
                         };
                     };
                 };
@@ -653,6 +688,10 @@ export interface paths {
          *     (~15–30 s on the Space GPU). Server-side global state — the swap
          *     affects every concurrent caller. HMAC-gated: a rogue swap is a
          *     denial-of-service vector.
+         *
+         *     Waits for any in-flight decode before unloading, so a swap
+         *     cannot pull weights out from under a running generation.
+         *     Returns 409 when the deployment pins its model.
          */
         post: {
             parameters: {
@@ -684,6 +723,21 @@ export interface paths {
                 };
                 400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
+                /**
+                 * @description Model switching is locked on this deployment
+                 *     (`HOPE_MODEL_LOCKED`). Production deployments serve one
+                 *     pinned adapter; the switcher is for research.
+                 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            detail?: string;
+                        };
+                    };
+                };
             };
         };
         delete?: never;
@@ -959,6 +1013,17 @@ export interface components {
              *     so a facilitator never sends a flagged draft unknowingly.
              */
             mi_violations?: string[] | null;
+            /**
+             * @description Whether the draft refers only to what the participant's post
+             *     says. `ungrounded` means it mentions something the post does not
+             *     say (a person, event, place, photo, outcome or feeling) and every
+             *     regeneration did too; the dashboard warns so the facilitator
+             *     checks it against the post before sending. `unchecked` means the
+             *     check is off or gave no usable answer — it is not an approval.
+             *     Absent from service versions that predate the check.
+             * @enum {string|null}
+             */
+            grounding?: "grounded" | "ungrounded" | "unchecked" | null;
         };
         GenerateResponse: {
             /**
@@ -1094,6 +1159,12 @@ export interface components {
             memory_db?: "ok" | "missing" | "error";
             /** @enum {string} */
             dropout_api?: "reachable" | "unreachable";
+            /**
+             * @description Decodes running or queued. One process serves one model, so
+             *     a value above 1 means callers are waiting on each other.
+             * @default 0
+             */
+            generation_queue_depth: number;
             /** Format: date-time */
             timestamp?: string;
         };

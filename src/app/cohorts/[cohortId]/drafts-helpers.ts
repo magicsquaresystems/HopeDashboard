@@ -10,7 +10,7 @@
 
 import { DAY_MS, scoreWindowEnd } from "@/lib/signals";
 import type { ParticipantHistory } from "@/lib/api/dropout";
-import type { ActivityType } from "@/lib/api/commentGen";
+import type { ActivityType, Draft } from "@/lib/api/commentGen";
 
 /**
  * Shape of the error card rendered when /generate fails. The tone drives
@@ -396,4 +396,109 @@ export function friendlyPublishError(message: string): {
         title: "Hope didn't confirm this reply",
         body: "It may or may not have been posted. Check the participant's post on Hope before sending again — or copy the reply and paste it there.",
     };
+}
+
+/**
+ * A warning shown on a draft before a facilitator sends it.
+ *
+ * These are not errors. The draft is still there and still sendable; the
+ * warning says what to look at first. A draft withheld with no
+ * explanation is worse than a draft with a caveat — the facilitator
+ * loses both the text and the reason.
+ */
+export type DraftWarning = {
+    /** Stable key for React and for tests; never shown. */
+    id: string;
+    title: string;
+    body: string;
+};
+
+/**
+ * The service returns MI violations as sentences written for a developer
+ * reading logs — "diagnostic language (2 matches): facilitators do not
+ * diagnose." Matching on the leading phrase turns them into something a
+ * facilitator can act on without a glossary. An unrecognised violation
+ * still produces a warning: a silent one would be the only case where the
+ * checker found something and the interface said nothing.
+ */
+const MI_WARNINGS: { match: RegExp; id: string; title: string; body: string }[] = [
+    {
+        match: /^diagnostic language/i,
+        id: "mi-diagnostic",
+        title: "Reads like a diagnosis",
+        body: "Facilitators don't diagnose. Reword anything that names or implies a condition.",
+    },
+    {
+        match: /^medication\/dosage/i,
+        id: "mi-medication",
+        title: "Mentions medication or a dose",
+        body: "Medication is outside a facilitator's scope. Take it out before sending.",
+    },
+    {
+        match: /URL\(s\)/i,
+        id: "mi-url",
+        title: "Contains a link",
+        body: "Facilitators don't share external links. Remove it before sending.",
+    },
+    {
+        match: /^too prescriptive/i,
+        id: "mi-prescriptive",
+        title: "Tells them what to do",
+        body: "Invite their ideas first — advice lands better when it's asked for.",
+    },
+    {
+        match: /'Why' question/i,
+        id: "mi-why",
+        title: "Asks a 'Why' question",
+        body: "\u201cWhy\u201d can sound judgmental. \u201cWhat\u201d or \u201cHow\u201d usually works better.",
+    },
+    {
+        match: /reflection:question ratio/i,
+        id: "mi-ratio",
+        title: "Asks more than it reflects",
+        body: "This reads as interrogative. Reflect what they said before asking anything else.",
+    },
+];
+
+/**
+ * Warnings to show on one draft, most important first.
+ *
+ * Grounding comes first when present: an invented detail is the failure a
+ * skim would miss, because the sentence reads perfectly. An MI violation
+ * usually looks wrong on the page; a fabricated son's wedding does not.
+ *
+ * `unchecked` produces nothing, and that is deliberate. It means the
+ * check was off or gave no usable answer, which is not an approval — but
+ * a per-draft "we didn't check this" on every draft is noise that would
+ * train facilitators to ignore the whole strip. The
+ * "What this draft is based on" disclosure carries that detail instead.
+ */
+export function draftWarnings(
+    draft: Pick<Draft, "mi_violations" | "grounding">,
+): DraftWarning[] {
+    const warnings: DraftWarning[] = [];
+
+    if (draft.grounding === "ungrounded") {
+        warnings.push({
+            id: "grounding",
+            title: "May mention something they didn't say",
+            body: "Check this against their post before you send it.",
+        });
+    }
+
+    for (const violation of draft.mi_violations ?? []) {
+        const known = MI_WARNINGS.find((w) => w.match.test(violation));
+        const warning = known
+            ? { id: known.id, title: known.title, body: known.body }
+            : {
+                  id: "mi-other",
+                  title: "Needs a second look",
+                  body: "The safety check flagged something in this draft. Read it through before sending.",
+              };
+        // Two violations of the same kind are one warning: the facilitator
+        // rereads the draft once either way.
+        if (!warnings.some((w) => w.id === warning.id)) warnings.push(warning);
+    }
+
+    return warnings;
 }
