@@ -13,6 +13,15 @@ import {
 import { withApiErrors } from "../../_errors";
 
 /**
+ * Longest reply the route will forward. Well above any draft the model
+ * writes (under 50 words) and any reply a facilitator types, and well
+ * below the point where the URL-encoded query string hits IIS's 2,048
+ * character ceiling. Mirrored in the facilitator copy in
+ * `drafts-helpers.ts` — change both.
+ */
+const MAX_COMMENT_CHARS = 1000;
+
+/**
  * Publish a facilitator's reply to a participant, via the Hope Move
  * platform.
  *
@@ -104,6 +113,20 @@ export const POST = withApiErrors(async (req: NextRequest) => {
         // An empty reply is always a bug on the way here, never an
         // intention. Posting one would still notify the participant.
         throw new ApiError(400, "comment is empty", "invalid_request");
+    }
+    if (comment.length > MAX_COMMENT_CHARS) {
+        // The platform binds the reply from the query string (see
+        // `postComment` in lib/api/hope.ts), and IIS caps a query string
+        // at 2,048 characters *after* URL-encoding — an emoji costs
+        // twelve. Past the cap IIS answers 404, the same status the
+        // missing-parameter case produced, and that took days to read
+        // correctly once. Refusing here, with a reason, beats letting
+        // a long reply reproduce it.
+        throw new ApiError(
+            400,
+            `comment is ${comment.length} characters; the limit is ${MAX_COMMENT_CHARS}`,
+            "comment_too_long",
+        );
     }
 
     const activityType = toPlatformActivityType(body.activityType);

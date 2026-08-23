@@ -275,12 +275,28 @@ export function createHopeClient(opts: {
          * mistake reaches a person on a health programme rather than a
          * row in a dataset. Callers must have a human's explicit
          * confirmation before reaching it.
+         *
+         * The four fields travel in the query string, not a JSON body.
+         * The platform is ASP.NET Web API 2, and its action is declared
+         * `PostComment(int cohortId, string activityType, int recordId,
+         * string comment)` — simple-type parameters, which Web API 2 binds
+         * from the URI. A JSON body leaves all four unbound, action
+         * selection fails, and the framework answers 404 before
+         * `[Authorize]` ever runs. That 404 was read as "the route is not
+         * deployed" for days; the route was there the whole time. Probed
+         * on staging: body-only 404, query string 401 (the auth gate,
+         * reached at last), GET 405.
          */
         async postComment(input: PostCommentInput): Promise<void> {
             await client.request<unknown>({
                 method: "POST",
                 path: "/api/dashboard/comment",
-                body: input,
+                query: {
+                    cohortId: input.cohortId,
+                    activityType: input.activityType,
+                    recordId: input.recordId,
+                    comment: input.comment,
+                },
             });
         },
     };

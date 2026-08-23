@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+    createHopeClient,
     programmeLengthFrom,
     toCohortList,
     toCohortMeta,
@@ -215,5 +216,69 @@ describe("toCohortList", () => {
         for (const bad of [null, undefined, {}, "[]", { cohorts: null }]) {
             expect(toCohortList(bad)).toEqual([]);
         }
+    });
+});
+
+
+/**
+ * The platform is ASP.NET Web API 2 and `PostComment` takes four
+ * simple-type parameters, which Web API 2 binds from the URI. Sent as a
+ * JSON body they stay unbound, no action matches, and the framework
+ * answers 404 before `[Authorize]` runs — which is exactly what the
+ * dashboard saw for days and read as "route not deployed". This pins the
+ * wire format so the next refactor cannot quietly put them back in the
+ * body.
+ */
+describe("createHopeClient().postComment", () => {
+    async function capture() {
+        const seen: { url: URL; init: RequestInit }[] = [];
+        const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = new URL(
+                typeof input === "string"
+                    ? input
+                    : input instanceof URL
+                      ? input.toString()
+                      : input.url,
+            );
+            seen.push({ url, init: init ?? {} });
+            return new Response("{}", {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+            });
+        }) as typeof fetch;
+        await createHopeClient({
+            baseUrl: "https://staging.example.org",
+            accessToken: "tok",
+            fetchImpl,
+        }).postComment({
+            cohortId: 1743,
+            activityType: "GoalSetting",
+            recordId: 41313,
+            comment: "Walking little and often is kind to knees 💛",
+        });
+        return seen[0];
+    }
+
+    it("POSTs to /api/dashboard/comment", async () => {
+        const { url, init } = await capture();
+        expect(init.method).toBe("POST");
+        expect(url.pathname).toBe("/api/dashboard/comment");
+    });
+
+    it("puts all four fields in the query string, not a body", async () => {
+        const { url, init } = await capture();
+        expect(url.searchParams.get("cohortId")).toBe("1743");
+        expect(url.searchParams.get("activityType")).toBe("GoalSetting");
+        expect(url.searchParams.get("recordId")).toBe("41313");
+        expect(url.searchParams.get("comment")).toBe(
+            "Walking little and often is kind to knees 💛",
+        );
+        expect(init.body).toBeUndefined();
+    });
+
+    it("still sends the facilitator's bearer token", async () => {
+        const { init } = await capture();
+        const headers = new Headers(init.headers);
+        expect(headers.get("Authorization")).toBe("Bearer tok");
     });
 });

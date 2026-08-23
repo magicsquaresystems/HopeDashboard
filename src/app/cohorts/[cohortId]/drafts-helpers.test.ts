@@ -366,10 +366,23 @@ describe("friendlyPublishError", () => {
         }
     });
 
+    it("tells a facilitator to shorten a reply that is too long, not to repost it", () => {
+        // Matched before the generic 400 branch: that one says "copy the
+        // reply and post it on Hope", which for a too-long reply sends
+        // them away from the one place they can fix it.
+        const e = friendlyPublishError(
+            "/api/proxy/hope/comment failed: 400 comment_too_long",
+        );
+        expect(e.title).toMatch(/too long/i);
+        expect(e.body).toMatch(/1,000/);
+        expect(e.body).not.toMatch(/post it on Hope/);
+    });
+
     it("keeps route paths, env names and status codes out of the copy", () => {
         for (const msg of [
             "/api/proxy/hope/comment failed: 503 posting_disabled",
             "/api/proxy/hope/comment failed: 400 invalid_request",
+            "/api/proxy/hope/comment failed: 400 comment_too_long",
             "/api/proxy/hope/comment failed: 502 upstream",
         ]) {
             const { title, body } = friendlyPublishError(msg);

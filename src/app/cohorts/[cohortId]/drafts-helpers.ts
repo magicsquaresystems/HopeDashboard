@@ -386,6 +386,16 @@ export function friendlyPublishError(message: string): {
             body: "Open the Insights Hub again from your Facilitator Dashboard to carry on.",
         };
     }
+    // Before the generic 400 branch: it is also a 400, and the generic
+    // copy tells the facilitator to copy the reply and post it on Hope,
+    // which for a too-long reply is the wrong advice — they need to
+    // shorten it, and they can do that right here.
+    if (m.includes("comment_too_long")) {
+        return {
+            title: "This reply is too long to send",
+            body: "Hope accepts replies up to 1,000 characters. Trim it and try again.",
+        };
+    }
     if (m.includes("invalid_request") || m.includes(" 400")) {
         return {
             title: "This reply couldn't be filed",
