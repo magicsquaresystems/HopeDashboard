@@ -97,9 +97,14 @@ export function QueueItem({
                     )}
                 </div>
                 {contactedNote && (
-                    <div className="mt-1 flex items-center gap-1 text-[11px] text-risk-lo">
-                        <Check className="h-3 w-3 shrink-0" aria-hidden />
-                        <span className="truncate">{contactedNote}</span>
+                    <div className="mt-1 flex items-start gap-1 text-[11px] text-risk-lo">
+                        {/* Wraps rather than truncates. "Contacted by support ·
+                            yesterday" is the whole point of the line, and the
+                            queue column is narrow enough that `truncate` cut
+                            it to "Contacted by support · yest…" — hiding the
+                            one word a facilitator scans for. */}
+                        <Check className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+                        <span className="min-w-0 break-words">{contactedNote}</span>
                     </div>
                 )}
             </div>
