@@ -135,8 +135,13 @@ export function Drafts({
     // the participant's own words with the platform's goal template
     // stripped off — see post-text.ts for what that template did to the
     // drafts.
+    // The platform now sends the goal sentence separately (`actionPart`),
+    // the authoritative version of what postTextForModel recovers from the
+    // templated description by pattern-matching. Prefer it; the recovery
+    // stays for older payloads and every other activity type.
     const postText: string = recentPost
-        ? postTextForModel(recentPost.activityType, recentPost.text)
+        ? (recentPost.actionPart ??
+          postTextForModel(recentPost.activityType, recentPost.text))
         : "";
     const activityType: ActivityType =
         recentPost?.activityType ?? "GoalSetting";
@@ -387,6 +392,21 @@ export function Drafts({
                                 <p className="whitespace-pre-wrap text-sm leading-relaxed text-text">
                                     {recentPost.text}
                                 </p>
+                                {recentPost.confidence != null && (
+                                    <p className="mt-1.5 text-xs text-text-2">
+                                        Their confidence rating:{" "}
+                                        <span className="font-medium text-text">
+                                            {recentPost.confidence}
+                                        </span>
+                                    </p>
+                                )}
+                                {recentPost.hasImage && (
+                                    <p className="mt-1.5 text-xs text-risk-md">
+                                        This post includes a photo. The AI
+                                        can&apos;t see images, so check the
+                                        draft against the picture too.
+                                    </p>
+                                )}
                             </div>
                         )}
                     </div>

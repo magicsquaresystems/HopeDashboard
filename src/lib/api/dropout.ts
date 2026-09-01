@@ -70,6 +70,28 @@ export type EventRecord = {
      * comment-gen `/generate` (its memory store dedupes on it). Inert on
      * the risk-service wire like the page fields above. */
     activity_id?: number;
+
+    // --- goal-form fields (platform additions, 2026-08-24) --------------
+    // Only on GoalSetting activities from the updated platform; absent on
+    // older bundles. Inert on the risk-service wire like the page fields.
+    /** The participant's goal sentence, WITHOUT the "on {when} . I will
+     * aim to do this {frequency}" template `description` still carries.
+     * When present it replaces the pattern-matched recovery in
+     * `src/lib/post-text.ts` as the model's input. */
+    action_part?: string | null;
+    when_part?: string | null;
+    frequency_part?: string | null;
+    /** The confidence rating from the goal form. Facilitators see this
+     * number and real replies reference it, so the corpus audit found
+     * "your confidence level of 5" replies flagged as invented — the
+     * field existed on the platform and never reached us until now. */
+    confidence?: number | null;
+    /** Azure blob path when the participant attached a photo; null or
+     * absent otherwise. NOT a renderable URL — it needs a signed URL
+     * (see `src/lib/participant-image.ts`). Its presence matters even
+     * unrendered: the drafting model cannot see images, and 89% of
+     * training replies that mention a photo were flagged as ungrounded. */
+    image_url?: string | null;
 };
 
 /**

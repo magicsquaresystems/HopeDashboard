@@ -184,6 +184,18 @@ export type ReplyTarget = {
     typeKnown: boolean;
     daysAgo: number;
     isDiscussion: boolean;
+    /** The goal sentence without the platform's template, when the
+     * platform sent it (2026-08-24 additions). Preferred over pattern
+     * recovery as the model's input. */
+    actionPart?: string;
+    /** The goal form's confidence rating, when sent. Shown to the
+     * facilitator; deliberately NOT fed to the model yet — the corpus
+     * it was trained on never contained it. */
+    confidence?: number;
+    /** True when the post carries a photo. The drafting model cannot see
+     * images, so the panel says so instead of letting a facilitator
+     * assume otherwise. */
+    hasImage: boolean;
     topicId?: number;
     /** Platform activity id — forwarded on /generate so the service's
      *  memory store can dedupe repeated generations against the same
@@ -250,12 +262,21 @@ export function pickReplyTarget(
           ? (latest.activity_type as ActivityType)
           : "GoalSetting";
 
+    const actionPart =
+        typeof latest.action_part === "string" && latest.action_part.trim()
+            ? latest.action_part.trim()
+            : undefined;
     return {
         text: (latest.description ?? "").trim(),
         activityType,
         typeKnown,
         daysAgo,
         isDiscussion,
+        actionPart,
+        confidence:
+            typeof latest.confidence === "number" ? latest.confidence : undefined,
+        hasImage:
+            typeof latest.image_url === "string" && latest.image_url.trim() !== "",
         topicId: latest.topic_id,
         activityId: latest.activity_id,
     };

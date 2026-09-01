@@ -247,6 +247,7 @@ describe("canPublishReply", () => {
         activityType: "GoalSetting" as const,
         typeKnown: true,
         daysAgo: 1,
+        hasImage: false,
         isDiscussion: false,
         activityId: 4321,
     };
@@ -315,6 +316,7 @@ describe("publishBlockedReason", () => {
         activityType: "GoalSetting" as const,
         typeKnown: true,
         daysAgo: 1,
+        hasImage: false,
         isDiscussion: false,
         activityId: 1,
     };
@@ -511,5 +513,77 @@ describe("pickReplyTarget in a cohort's first week", () => {
             ],
         };
         expect(pickReplyTarget(h, null, now)?.daysAgo).toBe(1);
+    });
+});
+
+
+describe("pickReplyTarget with the platform's goal-form fields", () => {
+    const start = Date.parse("2026-08-21T00:00:00Z");
+    const now = start + 2 * DAY_MS;
+    const base = {
+        participant_id: "103603",
+        effective_start: "2026-08-21T00:00:00Z",
+        score_at_day: 7,
+        cohort_size: 3,
+        programme_length_days: 49,
+    };
+
+    it("carries actionPart, confidence and the photo flag when sent", () => {
+        const h: ParticipantHistory = {
+            ...base,
+            events: [
+                {
+                    timestamp: new Date(now - DAY_MS).toISOString(),
+                    event_type: "activity",
+                    activity_type: "GoalSetting",
+                    description:
+                        "I want to walk to the end of my road. on In the morning . I will aim to do this Three times a week",
+                    action_part: "I want to walk to the end of my road.",
+                    confidence: 4,
+                    image_url: "imgs/hope/abc/photo.jpg",
+                    activity_id: 41313,
+                },
+            ],
+        };
+        const target = pickReplyTarget(h, null, now);
+        expect(target?.actionPart).toBe("I want to walk to the end of my road.");
+        expect(target?.confidence).toBe(4);
+        expect(target?.hasImage).toBe(true);
+    });
+
+    it("treats older payloads without the fields as before", () => {
+        const h: ParticipantHistory = {
+            ...base,
+            events: [
+                {
+                    timestamp: new Date(now - DAY_MS).toISOString(),
+                    event_type: "activity",
+                    activity_type: "GoalSetting",
+                    description: "rest on At home. I will aim to do this Every day",
+                    activity_id: 41311,
+                },
+            ],
+        };
+        const target = pickReplyTarget(h, null, now);
+        expect(target?.actionPart).toBeUndefined();
+        expect(target?.confidence).toBeUndefined();
+        expect(target?.hasImage).toBe(false);
+    });
+
+    it("ignores a blank actionPart rather than sending the model an empty post", () => {
+        const h: ParticipantHistory = {
+            ...base,
+            events: [
+                {
+                    timestamp: new Date(now - DAY_MS).toISOString(),
+                    event_type: "activity",
+                    activity_type: "GoalSetting",
+                    description: "rest on At home. I will aim to do this Every day",
+                    action_part: "   ",
+                    activity_id: 41311,
+                },
+            ],
+        };
+        expect(pickReplyTarget(h, null, now)?.actionPart).toBeUndefined();
     });
 });

@@ -359,6 +359,20 @@ function eventFromActivity(a) {
         // `priorFacilitatorReplies[].activityId` can be joined back to the
         // exact post the facilitator replied to.
         activity_id: a.id,
+        // Added by the platform 2026-08-24, absent on older exports and on
+        // every non-goal activity. `actionPart` is the participant's own
+        // goal sentence WITHOUT the "on {when} . I will aim to do this
+        // {frequency}" template that `description` still carries — the
+        // authoritative version of what src/lib/post-text.ts recovers by
+        // pattern-matching. `confidence` is the rating from the goal form
+        // that facilitators can see and reply about.
+        action_part: a.actionPart ?? null,
+        when_part: a.whenPart ?? null,
+        frequency_part: a.frequencyPart ?? null,
+        confidence: typeof a.confidence === "number" ? a.confidence : null,
+        // An Azure blob path when the participant attached a photo, null
+        // otherwise. Not a URL: it needs signing before it can render.
+        image_url: a.imageUrl ?? null,
     };
 }
 

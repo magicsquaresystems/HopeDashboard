@@ -14,10 +14,8 @@ import { withApiErrors } from "../../_errors";
 
 /**
  * Longest reply the route will forward. Well above any draft the model
- * writes (under 50 words) and any reply a facilitator types, and well
- * below the point where the URL-encoded query string hits IIS's 2,048
- * character ceiling. Mirrored in the facilitator copy in
- * `drafts-helpers.ts` — change both.
+ * writes (under 50 words) and any reply a facilitator types. Mirrored in
+ * the facilitator copy in `drafts-helpers.ts` — change both.
  */
 const MAX_COMMENT_CHARS = 1000;
 
