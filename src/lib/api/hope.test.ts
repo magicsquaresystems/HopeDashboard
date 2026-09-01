@@ -221,13 +221,12 @@ describe("toCohortList", () => {
 
 
 /**
- * The platform is ASP.NET Web API 2 and `PostComment` takes four
- * simple-type parameters, which Web API 2 binds from the URI. Sent as a
- * JSON body they stay unbound, no action matches, and the framework
- * answers 404 before `[Authorize]` runs — which is exactly what the
- * dashboard saw for days and read as "route not deployed". This pins the
- * wire format so the next refactor cannot quietly put them back in the
- * body.
+ * The platform's `PostComment` takes `[FromBody] PostCommentRequest` —
+ * a JSON body with PascalCase keys (their 2026-08-24 change; the
+ * original signature bound simple parameters from the query string, and
+ * that mismatch read as "route not deployed" for days). This pins the
+ * wire format — the keys' casing included, because camelCase keys would
+ * bind an empty request object and fail somewhere less legible.
  */
 describe("createHopeClient().postComment", () => {
     async function capture() {
@@ -265,15 +264,18 @@ describe("createHopeClient().postComment", () => {
         expect(url.pathname).toBe("/api/dashboard/comment");
     });
 
-    it("puts all four fields in the query string, not a body", async () => {
+    it("sends the four fields as a PascalCase JSON body", async () => {
         const { url, init } = await capture();
-        expect(url.searchParams.get("cohortId")).toBe("1743");
-        expect(url.searchParams.get("activityType")).toBe("GoalSetting");
-        expect(url.searchParams.get("recordId")).toBe("41313");
-        expect(url.searchParams.get("comment")).toBe(
-            "Walking little and often is kind to knees 💛",
-        );
-        expect(init.body).toBeUndefined();
+        expect(url.search).toBe("");
+        const body = JSON.parse(String(init.body));
+        expect(body).toEqual({
+            CohortId: 1743,
+            ActivityType: "GoalSetting",
+            RecordId: 41313,
+            Comment: "Walking little and often is kind to knees 💛",
+        });
+        const headers = new Headers(init.headers);
+        expect(headers.get("Content-Type")).toBe("application/json");
     });
 
     it("still sends the facilitator's bearer token", async () => {

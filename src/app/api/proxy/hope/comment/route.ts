@@ -115,13 +115,12 @@ export const POST = withApiErrors(async (req: NextRequest) => {
         throw new ApiError(400, "comment is empty", "invalid_request");
     }
     if (comment.length > MAX_COMMENT_CHARS) {
-        // The platform binds the reply from the query string (see
-        // `postComment` in lib/api/hope.ts), and IIS caps a query string
-        // at 2,048 characters *after* URL-encoding — an emoji costs
-        // twelve. Past the cap IIS answers 404, the same status the
-        // missing-parameter case produced, and that took days to read
-        // correctly once. Refusing here, with a reason, beats letting
-        // a long reply reproduce it.
+        // The reply travels as a JSON body since the platform's 2026-08-24
+        // contract change, so the old IIS query-string ceiling no longer
+        // applies — but their comment column's limit is unknown and a
+        // thousand characters is already several times the longest real
+        // facilitator reply. A bound with a clear reason beats finding
+        // theirs the hard way.
         throw new ApiError(
             400,
             `comment is ${comment.length} characters; the limit is ${MAX_COMMENT_CHARS}`,

@@ -276,26 +276,25 @@ export function createHopeClient(opts: {
          * row in a dataset. Callers must have a human's explicit
          * confirmation before reaching it.
          *
-         * The four fields travel in the query string, not a JSON body.
-         * The platform is ASP.NET Web API 2, and its action is declared
-         * `PostComment(int cohortId, string activityType, int recordId,
-         * string comment)` — simple-type parameters, which Web API 2 binds
-         * from the URI. A JSON body leaves all four unbound, action
-         * selection fails, and the framework answers 404 before
-         * `[Authorize]` ever runs. That 404 was read as "the route is not
-         * deployed" for days; the route was there the whole time. Probed
-         * on staging: body-only 404, query string 401 (the auth gate,
-         * reached at last), GET 405.
+         * The wire format is a JSON body with PascalCase keys, matching
+         * the platform's `PostComment([FromBody] PostCommentRequest
+         * request)` (their change of 2026-08-24, replacing the original
+         * simple-parameter signature that bound from the query string).
+         * PascalCase is not optional: the C# property names reach the
+         * binder as written, and camelCase keys would leave the request
+         * object empty the same way the JSON body once left the query
+         * parameters unbound — a shape mistake here has already cost
+         * days once, which is why the test pins every key.
          */
         async postComment(input: PostCommentInput): Promise<void> {
             await client.request<unknown>({
                 method: "POST",
                 path: "/api/dashboard/comment",
-                query: {
-                    cohortId: input.cohortId,
-                    activityType: input.activityType,
-                    recordId: input.recordId,
-                    comment: input.comment,
+                body: {
+                    CohortId: input.cohortId,
+                    ActivityType: input.activityType,
+                    RecordId: input.recordId,
+                    Comment: input.comment,
                 },
             });
         },
