@@ -6,6 +6,7 @@ import { hopeConfig } from "@/lib/auth/hope-exchange";
 import { hopeSession } from "@/lib/auth/hope-session";
 import { requireFacilitatorEmail } from "@/lib/auth/facilitator";
 import { assertCohortAccess } from "@/lib/server/assignments";
+import { requiredId } from "../../_params";
 import { withApiErrors } from "../../_errors";
 
 /**
@@ -31,16 +32,10 @@ export const GET = withApiErrors(async (req: NextRequest) => {
     const email = await requireFacilitatorEmail();
     const params = req.nextUrl.searchParams;
 
-    const cohortId = Number(params.get("cohortId"));
-    if (!Number.isFinite(cohortId)) {
-        throw new ApiError(400, "cohortId is required", "invalid_request");
-    }
+    const cohortId = requiredId(params, "cohortId");
     await assertCohortAccess(email, cohortId);
 
-    const recordId = Number(params.get("recordId"));
-    if (!Number.isFinite(recordId)) {
-        throw new ApiError(400, "recordId is required", "invalid_request");
-    }
+    const recordId = requiredId(params, "recordId");
 
     // Mapped through the same function the send path uses, so only the
     // platform's own enum values are ever interpolated into its URL.

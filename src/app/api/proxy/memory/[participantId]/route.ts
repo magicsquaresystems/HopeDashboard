@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { ApiError } from "@/lib/api/client";
 import { commentGen } from "@/lib/api/server";
 import { requireFacilitatorEmail } from "@/lib/auth/facilitator";
 import { assertCohortAccess } from "@/lib/server/assignments";
+import { requiredId } from "../../_params";
 import { withApiErrors } from "../../_errors";
 
 /**
@@ -34,10 +34,7 @@ export const GET = withApiErrors(
     ) => {
         const email = await requireFacilitatorEmail();
         const { participantId } = await params;
-        const cohortId = Number(req.nextUrl.searchParams.get("cohort_id"));
-        if (!Number.isSafeInteger(cohortId)) {
-            throw new ApiError(400, "cohort_id is required", "invalid_request");
-        }
+        const cohortId = requiredId(req.nextUrl.searchParams, "cohort_id");
         await assertCohortAccess(email, cohortId);
         const limit = req.nextUrl.searchParams.get("limit");
         const data = await commentGen().debugMemory(
