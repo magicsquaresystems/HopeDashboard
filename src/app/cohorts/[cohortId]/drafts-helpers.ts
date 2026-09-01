@@ -9,6 +9,7 @@
  */
 
 import { DAY_MS, signalClock } from "@/lib/signals";
+import { imageSrc } from "@/lib/image-src";
 import type { ParticipantHistory } from "@/lib/api/dropout";
 import type { ActivityType, Draft } from "@/lib/api/commentGen";
 
@@ -196,6 +197,11 @@ export type ReplyTarget = {
      * images, so the panel says so instead of letting a facilitator
      * assume otherwise. */
     hasImage: boolean;
+    /** The photo itself, as a value for `<img src>` — a signing-proxy URL
+     * for an uploaded blob. Separate from `hasImage` because the warning
+     * must appear even on a deployment with no storage credentials, where
+     * the picture cannot be fetched but its existence still matters. */
+    imageSrc?: string;
     topicId?: number;
     /** Platform activity id — forwarded on /generate so the service's
      *  memory store can dedupe repeated generations against the same
@@ -277,6 +283,7 @@ export function pickReplyTarget(
             typeof latest.confidence === "number" ? latest.confidence : undefined,
         hasImage:
             typeof latest.image_url === "string" && latest.image_url.trim() !== "",
+        imageSrc: imageSrc(latest.image_url) ?? undefined,
         topicId: latest.topic_id,
         activityId: latest.activity_id,
     };

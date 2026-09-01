@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
     createHopeClient,
+    toActivityComments,
     programmeLengthFrom,
     toCohortList,
     toCohortMeta,
@@ -282,5 +283,87 @@ describe("createHopeClient().postComment", () => {
         const { init } = await capture();
         const headers = new Headers(init.headers);
         expect(headers.get("Authorization")).toBe("Bearer tok");
+    });
+});
+
+
+/**
+ * The platform's conversation endpoint, added 2026-08-24. Its documented
+ * shape is a bare array, but `/api/dashboard/cohorts` turned out to wrap
+ * its rows and to serialise PascalCase on some endpoints and camelCase on
+ * others — so this normaliser accepts what the platform actually does
+ * rather than only what the note said.
+ */
+describe("toActivityComments", () => {
+    const row = {
+        id: 12345,
+        userId: 5830,
+        screenName: "Borris1",
+        comment: "A reply...",
+        recorded: "2026-08-21T17:13:37.11",
+    };
+
+    it("reads the documented bare array", () => {
+        const [c] = toActivityComments([row]);
+        expect(c.id).toBe(12345);
+        expect(c.screenName).toBe("Borris1");
+        expect(c.comment).toBe("A reply...");
+    });
+
+    it("normalises the naive timestamp to UTC, like every other platform date", () => {
+        expect(toActivityComments([row])[0].recorded).toBe(
+            "2026-08-21T17:13:37.11Z",
+        );
+    });
+
+    it("reads PascalCase rows", () => {
+        const [c] = toActivityComments([
+            {
+                Id: 7,
+                UserId: 1,
+                ScreenName: "Bob",
+                Comment: "Hello",
+                Recorded: "2026-08-21T10:00:00",
+            },
+        ]);
+        expect(c.id).toBe(7);
+        expect(c.screenName).toBe("Bob");
+        expect(c.comment).toBe("Hello");
+    });
+
+    it("accepts a wrapped array in either casing", () => {
+        expect(toActivityComments({ comments: [row] })).toHaveLength(1);
+        expect(toActivityComments({ Comments: [row] })).toHaveLength(1);
+    });
+
+    it("drops rows with no comment text rather than rendering a blank line", () => {
+        expect(toActivityComments([{ ...row, comment: "   " }])).toEqual([]);
+    });
+
+    it("returns nothing for shapes it does not recognise", () => {
+        expect(toActivityComments(null)).toEqual([]);
+        expect(toActivityComments({ unexpected: true })).toEqual([]);
+        expect(toActivityComments("nope")).toEqual([]);
+    });
+});
+
+describe("createHopeClient().fetchConversation", () => {
+    it("addresses the activity's conversation path", async () => {
+        let seen: URL | null = null;
+        const fetchImpl = (async (input: RequestInfo | URL) => {
+            seen = new URL(String(input));
+            return new Response(JSON.stringify([]), {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+            });
+        }) as typeof fetch;
+        await createHopeClient({
+            baseUrl: "https://staging.example.org",
+            accessToken: "tok",
+            fetchImpl,
+        }).fetchConversation("Gratitude", 47833);
+        expect(seen!.pathname).toBe(
+            "/api/dashboard/activities/Gratitude/47833/conversation",
+        );
     });
 });

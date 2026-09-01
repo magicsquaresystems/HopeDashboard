@@ -67,6 +67,7 @@ import type {
 } from "@/lib/api/dropout";
 import { proxyFailure } from "@/lib/api/proxy-error";
 import { BUSY_CODE } from "@/app/cohorts/[cohortId]/drafts-helpers";
+import type { ActivityComment } from "@/lib/api/hope";
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
 const FIVE_MIN = 5 * 60 * 1000;
@@ -293,6 +294,41 @@ export function useRiskModelInfo() {
         },
         staleTime: ONE_DAY,
         refetchOnWindowFocus: false,
+    });
+}
+
+/**
+ * The comments already on one activity record.
+ *
+ * Fetched per post rather than with the cohort, because the platform
+ * omits conversations from the bundle to keep those payloads small. Only
+ * runs when there is a record to ask about — a participant with no
+ * draftable post has no thread.
+ *
+ * `FIVE_MIN`: a colleague replying to the same post is exactly the race
+ * this exists to reveal, so a day-long cache would defeat it, but the
+ * thread does not change often enough to refetch on every render.
+ */
+export function useActivityConversation(
+    cohortId: number | undefined,
+    activityType: string | undefined,
+    recordId: number | null | undefined,
+) {
+    const enabled =
+        cohortId != null && !!activityType && recordId != null && recordId > 0;
+    return useQuery({
+        queryKey: ["activity-conversation", cohortId, activityType, recordId],
+        queryFn: () =>
+            getJSON<{ comments: ActivityComment[] }>(
+                `/api/proxy/hope/conversation?cohortId=${cohortId}` +
+                    `&activityType=${encodeURIComponent(activityType!)}` +
+                    `&recordId=${recordId}`,
+            ),
+        enabled,
+        staleTime: FIVE_MIN,
+        // A thread that cannot be fetched is not worth a retry storm; the
+        // panel simply shows nothing extra.
+        retry: 1,
     });
 }
 

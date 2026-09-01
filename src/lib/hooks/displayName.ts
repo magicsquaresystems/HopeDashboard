@@ -2,6 +2,7 @@
 
 import { useCohortBundle } from "@/lib/hooks/useCohortBundle";
 import { displayName as fallbackDisplayName } from "@/lib/signals";
+import { imageSrc } from "@/lib/image-src";
 
 /**
  * Resolve a participant's short label for the UI.
@@ -54,9 +55,11 @@ export function useBundleImageUrl(
     const p = bundle.data.participants.find(
         (x) => x.participant_id === participantId,
     );
-    const url = p?.imageUrl?.trim();
-    // Only absolute http(s). A relative path would resolve against THIS
-    // origin and quietly 404, and anything else is not something to hand
-    // to an <img src>.
-    return url && /^https?:\/\//i.test(url) ? url : null;
+    // Two shapes arrive in this one field: an absolute URL when the
+    // participant chose a Hope library avatar, an Azure blob path when
+    // they uploaded a photo. This used to drop the second kind, because
+    // a bare path resolves against THIS origin and 404s — so every
+    // participant with a real photograph showed initials. `imageSrc`
+    // routes those through the signing proxy instead.
+    return imageSrc(p?.imageUrl);
 }

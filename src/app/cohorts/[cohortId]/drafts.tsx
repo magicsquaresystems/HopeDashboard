@@ -21,6 +21,7 @@ import { CommentGenChip } from "@/components/comment-gen-chip";
 // scrubbed/de-identified.
 // import { FollowUpActivity } from "@/components/follow-up-activity";
 import {
+    useActivityConversation,
     useEvent,
     useGenerate,
     useParticipantPrediction,
@@ -135,6 +136,15 @@ export function Drafts({
     // the participant's own words with the platform's goal template
     // stripped off — see post-text.ts for what that template did to the
     // drafts.
+    // Whoever has already replied to this exact post. Shown so a
+    // facilitator does not send a second answer to something a colleague
+    // has covered — the cohort bundle never carried this.
+    const conversation = useActivityConversation(
+        cohort.id,
+        recentPost?.activityType,
+        recentPost?.activityId,
+    );
+
     // The platform now sends the goal sentence separately (`actionPart`),
     // the authoritative version of what postTextForModel recovers from the
     // templated description by pattern-matching. Prefer it; the recovery
@@ -400,6 +410,14 @@ export function Drafts({
                                         </span>
                                     </p>
                                 )}
+                                {recentPost.imageSrc && (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                        src={recentPost.imageSrc}
+                                        alt="Photo the participant attached to this post"
+                                        className="mt-2 max-h-64 w-auto rounded-md border border-border"
+                                    />
+                                )}
                                 {recentPost.hasImage && (
                                     <p className="mt-1.5 text-xs text-risk-md">
                                         This post includes a photo. The AI
@@ -407,6 +425,30 @@ export function Drafts({
                                         draft against the picture too.
                                     </p>
                                 )}
+                                {conversation.data?.comments &&
+                                    conversation.data.comments.length > 0 && (
+                                        <div className="mt-3 border-t border-border pt-2">
+                                            <p className="text-xs font-medium text-text-2">
+                                                Already replied to this post
+                                            </p>
+                                            <ul className="mt-1.5 space-y-1.5">
+                                                {conversation.data.comments.map(
+                                                    (c) => (
+                                                        <li
+                                                            key={c.id}
+                                                            className="text-xs leading-relaxed text-text-2"
+                                                        >
+                                                            <span className="font-medium text-text">
+                                                                {c.screenName ||
+                                                                    "Someone"}
+                                                            </span>
+                                                            : {c.comment}
+                                                        </li>
+                                                    ),
+                                                )}
+                                            </ul>
+                                        </div>
+                                    )}
                             </div>
                         )}
                     </div>

@@ -188,6 +188,56 @@ export function toPlatformActivityType(
     }
 }
 
+/**
+ * One comment on an activity, from
+ * `GET /api/dashboard/activities/{activityType}/{recordId}/conversation`.
+ *
+ * Added by the platform 2026-08-24 rather than inlined into the cohort
+ * pull, which would have made those payloads enormous. `screenName` is
+ * the author — a participant or a facilitator; the endpoint does not say
+ * which, so the UI must not claim to know.
+ */
+export type ActivityComment = {
+    id: number;
+    userId: number;
+    screenName: string;
+    comment: string;
+    recorded: string;
+};
+
+/** Rows the platform sends, defensively normalised. */
+export function toActivityComments(payload: unknown): ActivityComment[] {
+    // A bare array is documented; a `{ comments: [...] }` wrapper is what
+    // `/api/dashboard/cohorts` turned out to send, in either casing, so
+    // all three are accepted rather than assuming this endpoint differs.
+    const wrapped = payload as
+        | { comments?: unknown; Comments?: unknown }
+        | null;
+    const rows = Array.isArray(payload)
+        ? payload
+        : (wrapped?.comments ?? wrapped?.Comments);
+    if (!Array.isArray(rows)) return [];
+    return rows
+        .map((raw): ActivityComment | null => {
+            if (!raw || typeof raw !== "object") return null;
+            const row = raw as Record<string, unknown>;
+            // Read either casing: the platform's serialiser is PascalCase
+            // on some endpoints and camelCase on others.
+            const pick = (a: string, b: string) => row[a] ?? row[b];
+            const comment = String(pick("comment", "Comment") ?? "").trim();
+            if (!comment) return null;
+            const recorded = pick("recorded", "Recorded");
+            return {
+                id: Number(pick("id", "Id")) || 0,
+                userId: Number(pick("userId", "UserId")) || 0,
+                screenName: String(pick("screenName", "ScreenName") ?? "").trim(),
+                comment,
+                recorded: typeof recorded === "string" ? ensureUtc(recorded) : "",
+            };
+        })
+        .filter((c): c is ActivityComment => c !== null);
+}
+
 export type PostCommentInput = {
     cohortId: number;
     activityType: PlatformActivityType;
@@ -264,6 +314,29 @@ export function createHopeClient(opts: {
                 facilitatorComments,
                 discussionTopics,
             };
+        },
+
+        /**
+         * Every comment already on one activity record.
+         *
+         * The cohort pull deliberately omits these — including them would
+         * make those payloads enormous — so a thread is fetched only when
+         * a facilitator is actually looking at that post.
+         *
+         * `activityType` is interpolated into the path, so it is the
+         * platform's own enum value from `toPlatformActivityType` and
+         * never free text from a client.
+         */
+        async fetchConversation(
+            activityType: PlatformActivityType,
+            recordId: number,
+        ): Promise<ActivityComment[]> {
+            const payload = await client.request<unknown>({
+                path:
+                    `/api/dashboard/activities/${encodeURIComponent(activityType)}` +
+                    `/${recordId}/conversation`,
+            });
+            return toActivityComments(payload);
         },
 
         /**
