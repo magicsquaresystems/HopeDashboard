@@ -55,9 +55,19 @@ import type {
  * the longer PersonaLabel ("Warm personal check-in") so the tabs stay
  * compact on the drafts column.
  */
+// `‑` is a non-breaking hyphen, and it is load-bearing. Three of
+// these share a ~300px column, so two of them have to wrap — but a
+// browser breaks a line after any ordinary hyphen it finds, which turned
+// "Warm check-in" into "Warm check-" / "in". The non-breaking hyphen
+// moves the break to the space instead: "Warm" / "check‑in". It renders
+// identically to a normal hyphen.
+//
+// "Goal-focused" keeps its ordinary hyphen deliberately: it has no space
+// to fall back on, so forbidding the break there would mean overflow
+// rather than a wrap if the column ever gets narrower.
 const PERSONA_TAB_LABEL: Record<Persona, string> = {
-    Empathetic: "Warm check-in",
-    "Action-oriented": "Next-step nudge",
+    Empathetic: "Warm check‑in",
+    "Action-oriented": "Next‑step nudge",
     "Goal-oriented": "Goal-focused",
 };
 
@@ -663,6 +673,15 @@ export function Drafts({
                     const current: Draft =
                         drafts.find((d) => d.persona === activePersona) ??
                         drafts[0];
+                    // Which segment the sliding pill sits over. Derived
+                    // from `current`, not `activePersona`, so the pill
+                    // follows the draft actually on screen — the two
+                    // differ for the first render after a regeneration,
+                    // when the previous persona is no longer in the set.
+                    const activeIndex = Math.max(
+                        0,
+                        drafts.findIndex((d) => d.persona === current.persona),
+                    );
                     const ctx: DraftContext = {
                         topFactors: prediction.data?.contributing_factors ?? [],
                         lastActiveDays: history
@@ -682,11 +701,44 @@ export function Drafts({
                                     <span className="text-xs font-semibold uppercase tracking-wide text-muted">
                                         Suggested tone
                                     </span>
+                                    {/* A segmented control: the selected
+                                        tone is one dark pill that slides
+                                        between positions rather than three
+                                        backgrounds switching on and off.
+                                        Sliding is the point — it shows
+                                        these are three views of one
+                                        choice, and the movement tells you
+                                        which way you just moved. Equal
+                                        grid columns rather than `flex-1`
+                                        so the pill's geometry is
+                                        arithmetic, not measurement: no
+                                        ref, no layout effect, nothing to
+                                        resync on resize. */}
                                     <div
                                         role="tablist"
                                         aria-label="Draft tone"
-                                        className="flex flex-wrap gap-1 rounded-md bg-surface-2 p-1"
+                                        className="relative grid gap-1 rounded-md bg-surface-2 p-1"
+                                        style={{
+                                            gridTemplateColumns: `repeat(${drafts.length}, minmax(0, 1fr))`,
+                                        }}
                                     >
+                                        <span
+                                            aria-hidden
+                                            className="pointer-events-none absolute inset-y-1 left-1 rounded bg-text shadow-sm transition-transform duration-200 ease-out motion-reduce:transition-none"
+                                            style={{
+                                                // One column: the track
+                                                // minus its padding and
+                                                // the gaps between tabs.
+                                                width: `calc((100% - 0.5rem - ${
+                                                    (drafts.length - 1) * 0.25
+                                                }rem) / ${drafts.length})`,
+                                                // `100%` here is the pill's
+                                                // own width — one column —
+                                                // so each step is a column
+                                                // plus one gap.
+                                                transform: `translateX(calc(${activeIndex} * (100% + 0.25rem)))`,
+                                            }}
+                                        />
                                         {drafts.map((d) => {
                                             const isActive =
                                                 d.persona === current.persona;
@@ -701,10 +753,18 @@ export function Drafts({
                                                             d.persona,
                                                         )
                                                     }
+                                                    // `relative` to sit
+                                                    // above the pill, and
+                                                    // `px-2` because three
+                                                    // labels share a ~300px
+                                                    // column — at `px-3`
+                                                    // the longest wrapped
+                                                    // while the other two
+                                                    // did not.
                                                     className={
-                                                        "flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors " +
+                                                        "relative rounded px-2 py-1.5 text-center text-xs font-medium leading-tight transition-colors " +
                                                         (isActive
-                                                            ? "bg-surface text-text shadow-sm"
+                                                            ? "text-surface"
                                                             : "text-muted hover:text-text-2")
                                                     }
                                                 >

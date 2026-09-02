@@ -343,9 +343,17 @@ export function DraftCard({
                     </div>
                 )}
 
-                {/* Footer: refresh + chars  /  helpful? + kebab + Send */}
-                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2">
-                    <div className="flex items-center gap-2 text-xs text-muted">
+                {/* Footer, deliberately two rows rather than one that
+                    wraps. The drafts column is ~320px wide, and everything
+                    here on a single line did not fit: "Copy reply" broke
+                    across two lines and the Send label was clipped
+                    mid-word, which is what production shipped. The split
+                    is also the honest one — the top row is about the text
+                    (regenerate it, polish it, how long is it, was it any
+                    good) and the bottom row is the two ways out of the
+                    card. */}
+                <div className="space-y-2 border-t border-border px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
                         <Button
                             variant="ghost"
                             size="icon"
@@ -393,44 +401,52 @@ export function DraftCard({
                                 Personalised
                             </span>
                         )}
-                    </div>
-                    <div className="flex items-center gap-1">
                         {/* Inline draft-quality feedback, visible and
                             labelled. The signal feeds the HITL improvement
-                            loop. */}
-                        <span className="mr-0.5 text-[11px] text-muted">
-                            {thumb ? "Thanks!" : "Helpful?"}
+                            loop. It sits on the meta row, not with Copy and
+                            Send: rating a draft says nothing about what you
+                            then do with it, and keeping it here leaves the
+                            row below for the two decisions. */}
+                        <span className="ml-auto flex shrink-0 items-center gap-1">
+                            <span className="mr-0.5 text-[11px] text-muted">
+                                {thumb ? "Thanks!" : "Helpful?"}
+                            </span>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => clickThumb("up")}
+                                disabled={pending}
+                                aria-label="Mark this draft as a good reply"
+                                aria-pressed={thumb === "up"}
+                                title="Good reply — tells the system to suggest more like this"
+                                className={cn(
+                                    "h-7 w-7 text-muted hover:text-risk-lo",
+                                    thumb === "up" && "text-risk-lo",
+                                )}
+                            >
+                                <ThumbsUp className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => clickThumb("down")}
+                                disabled={pending}
+                                aria-label="Mark this draft as a poor reply"
+                                aria-pressed={thumb === "down"}
+                                title="Not useful — helps improve future AI drafts"
+                                className={cn(
+                                    "h-7 w-7 text-muted hover:text-risk-hi",
+                                    thumb === "down" && "text-risk-hi",
+                                )}
+                            >
+                                <ThumbsDown className="h-3.5 w-3.5" />
+                            </Button>
                         </span>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => clickThumb("up")}
-                            disabled={pending}
-                            aria-label="Mark this draft as a good reply"
-                            aria-pressed={thumb === "up"}
-                            title="Good reply — tells the system to suggest more like this"
-                            className={cn(
-                                "h-7 w-7 text-muted hover:text-risk-lo",
-                                thumb === "up" && "text-risk-lo",
-                            )}
-                        >
-                            <ThumbsUp className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => clickThumb("down")}
-                            disabled={pending}
-                            aria-label="Mark this draft as a poor reply"
-                            aria-pressed={thumb === "down"}
-                            title="Not useful — helps improve future AI drafts"
-                            className={cn(
-                                "h-7 w-7 text-muted hover:text-risk-hi",
-                                thumb === "down" && "text-risk-hi",
-                            )}
-                        >
-                            <ThumbsDown className="h-3.5 w-3.5" />
-                        </Button>
+                    </div>
+                    {/* The two exits. Equal width so neither is the
+                        default by accident; Send is still the only one
+                        that asks before it acts. */}
+                    <div className="flex items-center gap-2">
                         <Button
                             size="sm"
                             // Demoted to secondary when Send is
@@ -440,7 +456,7 @@ export function DraftCard({
                             variant={canPublish ? "secondary" : "primary"}
                             onClick={clickCopy}
                             disabled={pending || !text.trim()}
-                            className="gap-1.5"
+                            className="flex-1 gap-1.5 whitespace-nowrap"
                         >
                             {clipboard.copied ? (
                                 <Check className="h-3.5 w-3.5" aria-hidden />
@@ -462,10 +478,20 @@ export function DraftCard({
                                     sendState === "confirming" ||
                                     sendState === "sending"
                                 }
-                                className="gap-1.5"
+                                // No name in the label. It used to read
+                                // "Send to {firstName} on Hope", which made
+                                // the button's width a function of the
+                                // participant's display name — the one
+                                // thing on this row nobody controls. The
+                                // card header already says "To: {name}",
+                                // and the confirm step below names them
+                                // again before anything is sent, so the
+                                // recipient is stated twice around a
+                                // button that no longer has to fit them.
+                                className="flex-1 gap-1.5 whitespace-nowrap"
                             >
-                                <Send className="h-3.5 w-3.5" aria-hidden />
-                                Send to {firstName} on Hope
+                                <Send className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                Send on Hope
                             </Button>
                         )}
                         {sendState === "sent" && (
@@ -473,7 +499,7 @@ export function DraftCard({
                                 size="sm"
                                 variant="secondary"
                                 disabled
-                                className="gap-1.5"
+                                className="flex-1 gap-1.5 whitespace-nowrap"
                             >
                                 <Check className="h-3.5 w-3.5" aria-hidden />
                                 Sent to Hope
@@ -484,7 +510,7 @@ export function DraftCard({
                                 size="sm"
                                 variant="secondary"
                                 disabled
-                                className="gap-1.5"
+                                className="flex-1 gap-1.5 whitespace-nowrap"
                                 title="Every check passed and the reply was built, but this deployment is in dry-run mode so nothing was delivered."
                             >
                                 <Check className="h-3.5 w-3.5" aria-hidden />

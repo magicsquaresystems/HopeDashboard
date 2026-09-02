@@ -49,7 +49,11 @@ import { InfoCardRow } from "@/components/info-card-row";
 import { useParticipantPrediction } from "@/lib/hooks/api";
 import { useCohortBundle } from "@/lib/hooks/useCohortBundle";
 import { useCohortScoring } from "@/lib/hooks/useCohortScoring";
-import { bundleParticipantIds, bundleToHistory } from "@/lib/realCohort";
+import {
+    bundleParticipantIds,
+    bundleToHistory,
+    findRealParticipant,
+} from "@/lib/realCohort";
 import {
     isAnchoredWeek,
     MODEL_MAX_WEEK,
@@ -65,7 +69,7 @@ import {
     daysSinceLastEvent,
     scoreWindowEnd,
     eventsLastNDays,
-    facilitatorContactCount,
+    facilitatorContactTile,
 } from "@/lib/signals";
 import { useBundleDisplayName } from "@/lib/hooks/displayName";
 
@@ -88,6 +92,20 @@ export function Detail({
         if (!selectedId || !bundle.data) return null;
         return bundleToHistory(bundle.data, selectedId, scoreAt);
     }, [selectedId, bundle.data, scoreAt]);
+    // Every facilitator reply this person has had, not just the ones
+    // inside the selected week. `bundleToHistory` drops events past the
+    // window end, so the windowed history cannot tell "nobody has
+    // replied" apart from "nobody had replied by then" — and the drafts
+    // column beside this one shows the later replies, so the panel
+    // contradicted itself. See `facilitatorContactTile`.
+    const totalFacilitatorReplies = useMemo(() => {
+        if (!selectedId || !bundle.data) return 0;
+        const p = findRealParticipant(bundle.data, selectedId);
+        return (
+            p?.events.filter((e) => e.event_type === "facilitator_comment")
+                .length ?? 0
+        );
+    }, [selectedId, bundle.data]);
     const aliasLabel = useBundleDisplayName(selectedId ?? "", cohortId);
     const {
         isScoring,
@@ -435,7 +453,12 @@ export function Detail({
                             </span>
                         </summary>
                         <div className="mt-3">
-                            <DetailMetrics history={history} />
+                            <DetailMetrics
+                                history={history}
+                                totalFacilitatorReplies={
+                                    totalFacilitatorReplies
+                                }
+                            />
                         </div>
                     </details>
                 )}
@@ -448,8 +471,11 @@ export function Detail({
 
 function DetailMetrics({
     history,
+    totalFacilitatorReplies,
 }: {
     history: ParticipantHistory;
+    /** Unwindowed reply count from the bundle — see the tile below. */
+    totalFacilitatorReplies: number;
 }) {
     // Frozen at mount, like the queue's clock. `daysSinceLastEvent`
     // defaults to `Date.now()`, and reading it during render makes the
@@ -462,7 +488,11 @@ function DetailMetrics({
     // stand today rather than at a checkpoint that has not arrived.
     const windowStillOpen = scoreWindowEnd(history) > now;
     const discussion = eventsLastNDays(history, "discussion_post", 14);
-    const facilitatorTouches = facilitatorContactCount(history);
+    const facilitatorContact = facilitatorContactTile(
+        history,
+        totalFacilitatorReplies,
+        now,
+    );
 
     // `null` means no events at all — worse than any "N days ago", so it
     // shares the negative tone with long silences.
@@ -519,13 +549,9 @@ function DetailMetrics({
             />
             <MetricTile
                 label="Facilitator contact"
-                value={facilitatorTouches}
-                delta={
-                    facilitatorTouches === 0
-                        ? "no comments yet"
-                        : "to date this programme"
-                }
-                tone={facilitatorTouches === 0 ? "negative" : "neutral"}
+                value={facilitatorContact.value}
+                delta={facilitatorContact.delta}
+                tone={facilitatorContact.tone}
             />
         </MetricGrid>
     );

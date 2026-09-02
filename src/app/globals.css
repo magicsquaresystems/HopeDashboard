@@ -15,9 +15,22 @@
   --text:       oklch(22% 0.012 250);
   --text-2:     oklch(42% 0.012 250);
   --muted:      oklch(58% 0.012 250);
-  --accent:     oklch(48% 0.14 255);
-  --accent-2:   oklch(96% 0.02 255);
-  --accent-ink: oklch(35% 0.14 255);
+  /* Interaction accent. Near-black rather than the prototype's blue, so
+   * the only saturated colours on the page are the three risk levels —
+   * a blue percentage beside an amber "Check in soon" badge reads as a
+   * fourth status, which is exactly the confusion the risk palette
+   * exists to prevent. Selected states, focus rings and links are all
+   * this ink; `primary` buttons already used `--text`, so the two now
+   * agree instead of competing.
+   *
+   * Kept as its own token rather than aliased to `--text`: these are
+   * different jobs (one is body copy, one is "you can act on this"),
+   * and a future theme may want them apart again. `--accent-2` stays a
+   * pale wash for chip backgrounds; `--accent-ink` is a shade deeper for
+   * text on that wash, so it clears contrast on a light fill. */
+  --accent:     oklch(28% 0.012 250);
+  --accent-2:   oklch(96% 0.004 250);
+  --accent-ink: oklch(22% 0.012 250);
   --risk-hi:    oklch(56% 0.17 25);
   --risk-hi-bg: oklch(96% 0.03 25);
   --risk-md:    oklch(62% 0.14 70);

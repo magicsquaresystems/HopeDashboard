@@ -320,11 +320,17 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                             facilitator hunting for filters that had
                             silently vanished, and the tooltip says when
                             they come back. */}
+                        {/* `secondary`, not `ghost`, for the unselected
+                            three. Ghost has no border and no fill, so a
+                            group of four toggles rendered as one dark pill
+                            beside three pieces of plain text — the only
+                            one that looked pressable was the one already
+                            pressed. */}
                         {FILTERS.map((f) => (
                             <Button
                                 key={f}
                                 size="sm"
-                                variant={filter === f ? "primary" : "ghost"}
+                                variant={filter === f ? "primary" : "secondary"}
                                 aria-pressed={filter === f}
                                 disabled={unscored && f !== "all"}
                                 title={

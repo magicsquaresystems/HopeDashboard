@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
     daysSinceLastEvent,
     eventsLastNDays,
+    facilitatorContactTile,
     lastActiveLabel,
     scoreWindowEnd,
     signalClock,
@@ -168,5 +169,80 @@ describe("signalClock", () => {
         const h = history([], 7);
         const duringWeekOne = Date.parse(START) + 2 * DAY;
         expect(signalClock(h, duringWeekOne)).toBe(duringWeekOne);
+    });
+});
+
+/**
+ * The bug this fixes was visible on one screen: the tile read "0 · no
+ * comments yet" while the drafts column beside it listed the reply a
+ * facilitator had already sent. Both were reading the same platform
+ * feed — the tile was counting a window that closed before the reply
+ * arrived, and describing the result as if it covered all time.
+ */
+describe("facilitatorContactTile", () => {
+    const REPLY = "facilitator_comment";
+
+    it("says nobody has replied only when nobody has", () => {
+        const t = facilitatorContactTile(history([], 7), 0);
+        expect(t).toEqual({
+            value: 0,
+            delta: "no replies yet",
+            tone: "negative",
+        });
+    });
+
+    it("names the week when every reply falls inside the window", () => {
+        // Two replies in week 1, scored at the end of week 1, nothing
+        // since: the windowed count is the whole story.
+        const h = history([evt(2, REPLY), evt(5, REPLY)], 7);
+        const afterTheWindow = Date.parse(START) + 30 * DAY;
+        expect(facilitatorContactTile(h, 2, afterTheWindow)).toEqual({
+            value: 2,
+            delta: "by end of week 1",
+            tone: "neutral",
+        });
+    });
+
+    it("says 'to date' while the selected week is still running", () => {
+        // A cohort in its own first week: "by end of week 1" would name
+        // a checkpoint that has not arrived.
+        const h = history([evt(1, REPLY)], 7);
+        const duringWeekOne = Date.parse(START) + 3 * DAY;
+        expect(facilitatorContactTile(h, 1, duringWeekOne).delta).toBe(
+            "to date this programme",
+        );
+    });
+
+    it("reports replies that landed after the window, and stays neutral", () => {
+        // The Mich007 case: quiet during week 1, replied to since. The
+        // count stays windowed like every other tile, but the tile no
+        // longer claims the silence is the whole picture — and the tone
+        // is not negative, because this person HAS been contacted.
+        const h = history([], 7);
+        const afterTheWindow = Date.parse(START) + 30 * DAY;
+        expect(facilitatorContactTile(h, 1, afterTheWindow)).toEqual({
+            value: 0,
+            delta: "1 more since week 1",
+            tone: "neutral",
+        });
+    });
+
+    it("counts only the replies the window does not already show", () => {
+        const h = history([evt(3, REPLY)], 14);
+        const afterTheWindow = Date.parse(START) + 60 * DAY;
+        expect(facilitatorContactTile(h, 4, afterTheWindow).delta).toBe(
+            "3 more since week 2",
+        );
+    });
+
+    it("never reports a negative remainder from a stale total", () => {
+        // The bundle and the history are fetched separately, so a total
+        // can arrive older than the history it is paired with. "-1 more
+        // since" would be nonsense on screen.
+        const h = history([evt(1, REPLY), evt(2, REPLY)], 7);
+        const afterTheWindow = Date.parse(START) + 30 * DAY;
+        expect(facilitatorContactTile(h, 1, afterTheWindow).delta).toBe(
+            "by end of week 1",
+        );
     });
 });

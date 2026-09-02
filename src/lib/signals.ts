@@ -146,6 +146,69 @@ export function facilitatorContactCount(history: ParticipantHistory): number {
         .length;
 }
 
+/** Programme week the scoring window closes in. 1-based, so day 7 is
+ *  week 1. Duplicated from `demo-events.ts` rather than imported: this
+ *  file is the one with no dependencies, and the copy is one line. */
+function weekOf(history: ParticipantHistory): number {
+    return Math.max(1, Math.ceil(history.score_at_day / 7));
+}
+
+/**
+ * Copy for the "Facilitator contact" tile.
+ *
+ * The tile counts replies inside the scoring window, like everything
+ * else in the panel — but it used to describe that count in absolute
+ * terms ("no comments yet", "to date this programme"), and the two are
+ * not the same claim. A facilitator replied to Mich007 in week 2 of a
+ * cohort being replayed at week 1, and the panel then said "0 · no
+ * comments yet" directly beside a drafts column showing that very
+ * reply. Both halves of the screen were reading the same platform feed
+ * and telling the facilitator opposite things.
+ *
+ * So the tile now separates three states it used to collapse into two:
+ * nobody has ever replied; replies happened and all of them fall inside
+ * the window; and the window is quiet but replies have landed since.
+ * The last one is the one worth saying out loud — it is the difference
+ * between "this person has been left alone" and "you are looking at an
+ * earlier week".
+ *
+ * `total` is the unwindowed count from the cohort bundle, which is where
+ * the truncation happens (`bundleToHistory` drops events past the
+ * window end), so it cannot be recovered from `history` alone.
+ */
+export function facilitatorContactTile(
+    history: ParticipantHistory,
+    total: number,
+    now: number = Date.now(),
+): { value: number; delta: string; tone: "neutral" | "negative" } {
+    const inWindow = facilitatorContactCount(history);
+    // Never negative, even if a caller passes a stale `total` from a
+    // bundle refetched before the history it is paired with.
+    const since = Math.max(0, total - inWindow);
+    if (total === 0) {
+        return { value: 0, delta: "no replies yet", tone: "negative" };
+    }
+    if (since === 0) {
+        // Every reply this person has had falls inside the window, so
+        // the windowed count is also the whole story.
+        return {
+            value: inWindow,
+            delta:
+                scoreWindowEnd(history) > now
+                    ? "to date this programme"
+                    : `by end of week ${weekOf(history)}`,
+            tone: "neutral",
+        };
+    }
+    // Someone has replied, just not by the checkpoint being viewed. Not
+    // a negative tone: the participant has been contacted.
+    return {
+        value: inWindow,
+        delta: `${since} more since week ${weekOf(history)}`,
+        tone: "neutral",
+    };
+}
+
 /**
  * Activation derives from the risk tier when one is available — High risk
  * means the participant is barely engaging, so activation is Low. When no
