@@ -41,11 +41,15 @@ export function classifyHopeLink(jwt: LinkableJwt): HopeLinkState {
     // checks `hopeSession()` has always made — kept identical so the two
     // can never disagree about what "usable" means.
     const hope = jwt.hope;
+    // `expiresAt` may legitimately be null — the platform did not tell
+    // us the lifetime — and a token whose expiry is unknown is still a
+    // usable credential. What is not usable is the field being absent
+    // or some other type, which means a partially written token.
     const usable =
         !!hope &&
         typeof hope.accessToken === "string" &&
         typeof hope.refreshToken === "string" &&
-        typeof hope.expiresAt === "number";
+        (typeof hope.expiresAt === "number" || hope.expiresAt === null);
 
     return usable ? "linked" : "broken";
 }

@@ -149,14 +149,13 @@ describe("expiresAtFrom", () => {
         expect(expiresAtFrom(900, 1_000_000)).toBe(1_000_000 + 900_000);
     });
 
-    it("falls back to a short window when the value is unusable", () => {
-        // Short, not long: an unreadable lifetime must mean "check again
-        // soon", never "this lasts forever".
-        for (const bad of [undefined, null, "nonsense", 0, -5, NaN]) {
-            expect(expiresAtFrom(bad, 1_000_000)).toBeLessThanOrEqual(
-                1_000_000 + 60_000,
-            );
-            expect(expiresAtFrom(bad, 1_000_000)).toBeGreaterThan(1_000_000);
+    it("reports an unusable lifetime as unknown rather than inventing one", () => {
+        // This used to return `now + 60_000`, a guess that happened to
+        // equal REFRESH_SKEW_MS and so made every token look due for
+        // refresh the instant it was issued. Unknown is a fact worth
+        // representing; a number that looks like knowledge is not.
+        for (const bad of [undefined, null, "", "nonsense", 0, -5, NaN]) {
+            expect(expiresAtFrom(bad, 1_000_000)).toBeNull();
         }
     });
 
@@ -309,13 +308,67 @@ describe("parseTokenResponse", () => {
         }
     });
 
-    it("still returns tokens when expiresIn is missing", () => {
-        // Missing lifetime is recoverable — we just refresh sooner.
+    it("still returns tokens when the lifetime is missing, with expiry unknown", () => {
+        // The credential is usable; only its lifetime is unknown. That
+        // must not be downgraded into a sign-in failure, nor papered
+        // over with a guess.
         const parsed = parseTokenResponse(
             { accessToken: "at", refreshToken: "rt" },
             now,
         );
         expect(parsed?.tokens.accessToken).toBe("at");
-        expect(parsed?.tokens.expiresAt).toBeGreaterThan(now);
+        expect(parsed?.tokens.refreshToken).toBe("rt");
+        expect(parsed?.tokens.expiresAt).toBeNull();
+    });
+
+    it("reads the OAuth-standard expires_in as well", () => {
+        // The spelling a .NET token endpoint is likeliest to emit, and
+        // the one this parser did not accept — so every token it issued
+        // came back with an unknown lifetime.
+        const parsed = parseTokenResponse(
+            { accessToken: "at", refreshToken: "rt", expires_in: 900 },
+            now,
+        );
+        expect(parsed?.tokens.expiresAt).toBe(now + 900_000);
+    });
+});
+
+/**
+ * The bug this pair of tests exists to prevent.
+ *
+ * `FALLBACK_LIFETIME_MS` was 60_000 and `REFRESH_SKEW_MS` is 60_000, so
+ * a token with an unreadable lifetime got `expiresAt = now + 60_000` and
+ * `needsRefresh` evaluated `now >= now` — true immediately, and true on
+ * every request after. The platform rotates refresh tokens, so the
+ * several calls a page load makes in parallel each tried to rotate the
+ * same one; the losers got nothing back, and a minute later the session
+ * was dropped with `hope_refresh_failed`. Facilitators were signed out
+ * within about a minute of signing in.
+ */
+describe("a token whose lifetime the platform never sent", () => {
+    it("is never proactively refreshed", () => {
+        const now = 1_000_000;
+        const { tokens } = parseTokenResponse(
+            { accessToken: "at", refreshToken: "rt" },
+            now,
+        )!;
+        expect(needsRefresh(tokens.expiresAt, now)).toBe(false);
+        // Still false much later. Only the platform can end this token,
+        // and it does that by rejecting a call.
+        expect(needsRefresh(tokens.expiresAt, now + 86_400_000)).toBe(false);
+    });
+
+    it("is refreshed on schedule once a lifetime IS supplied", () => {
+        // The proactive path must still work — this is not "never
+        // refresh", it is "do not refresh on a guess".
+        const now = 1_000_000;
+        const { tokens } = parseTokenResponse(
+            { accessToken: "at", refreshToken: "rt", expiresIn: 900 },
+            now,
+        )!;
+        expect(needsRefresh(tokens.expiresAt, now)).toBe(false);
+        expect(
+            needsRefresh(tokens.expiresAt, now + 900_000 - REFRESH_SKEW_MS),
+        ).toBe(true);
     });
 });

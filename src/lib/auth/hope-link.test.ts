@@ -63,6 +63,19 @@ describe("classifyHopeLink", () => {
         ).toBe("broken");
     });
 
+    it("accepts a token whose lifetime the platform never sent", () => {
+        // `null` expiry is unknown, not broken. The credential works;
+        // we simply will not pre-empt its expiry. Treating this as
+        // broken would refuse every token from a platform that omits
+        // the lifetime — which is the platform we have.
+        expect(
+            classifyHopeLink({
+                hopeUserId: "u1",
+                hope: { ...TOKENS, expiresAt: null },
+            }),
+        ).toBe("linked");
+    });
+
     it("does not accept a non-string or empty platform user id", () => {
         expect(classifyHopeLink({ hopeUserId: 42, hope: TOKENS })).toBe("none");
         expect(classifyHopeLink({ hopeUserId: "", hope: TOKENS })).toBe("none");

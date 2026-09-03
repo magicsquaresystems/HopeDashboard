@@ -32,19 +32,31 @@
  */
 export const REFRESH_SKEW_MS = 60_000;
 
-/**
- * Used when the platform sends an `expiresIn` we cannot read. Short on
- * purpose: an unreadable lifetime should mean "check again shortly", not
- * "assume this lasts forever" — the second is the one that strands a
- * facilitator on a dead token.
- */
-const FALLBACK_LIFETIME_MS = 60_000;
-
 export type HopeTokens = {
     accessToken: string;
     refreshToken: string;
-    /** Absolute epoch ms, already resolved from the wire's `expiresIn`. */
-    expiresAt: number;
+    /**
+     * Absolute epoch ms, resolved from the wire's relative lifetime, or
+     * `null` when the platform sent no lifetime we could read.
+     *
+     * `null` means unknown, and there is deliberately no substitute
+     * value. A previous version invented a 60-second lifetime here,
+     * which happened to equal `REFRESH_SKEW_MS` — so `needsRefresh` was
+     * `now >= now`, true on the first request after sign-in and every
+     * one after it. Since the platform ROTATES refresh tokens, the
+     * several requests a page load fires in parallel then raced the same
+     * rotation: one won, the rest were handed a token that no longer
+     * existed, and the session died about a minute after signing in.
+     *
+     * The guess was defended as "check again shortly rather than assume
+     * it lasts forever", the fear being a facilitator stranded on a dead
+     * token. But a dead token is not stranding — it is a 401, which
+     * `gateFacilitatorSession` already turns into a clean sign-out with
+     * a message. Guessing bought nothing and cost the session, so it is
+     * gone: an unknown lifetime now means we do not pre-empt, and the
+     * platform remains the authority on when its own token dies.
+     */
+    expiresAt: number | null;
 };
 
 export type HopeFacilitator = {
@@ -168,20 +180,41 @@ export function hasSyntheticEmail(email: string): boolean {
     return email.endsWith("@hope.invalid");
 }
 
-/** Absolute expiry from the wire's relative `expiresIn` (seconds). */
-export function expiresAtFrom(expiresIn: unknown, nowMs: number): number {
-    const seconds = typeof expiresIn === "number" ? expiresIn : Number(expiresIn);
-    if (!Number.isFinite(seconds) || seconds <= 0) {
-        return nowMs + FALLBACK_LIFETIME_MS;
+/**
+ * Absolute expiry from the wire's relative lifetime (seconds), or `null`
+ * when there is no lifetime to read.
+ *
+ * `null` rather than a stand-in: see `HopeTokens.expiresAt`. A caller
+ * that cannot act on "unknown" should say so, not be handed a number
+ * that looks like knowledge.
+ */
+export function expiresAtFrom(
+    expiresIn: unknown,
+    nowMs: number,
+): number | null {
+    if (expiresIn === null || expiresIn === undefined || expiresIn === "") {
+        return null;
     }
+    const seconds =
+        typeof expiresIn === "number" ? expiresIn : Number(expiresIn);
+    if (!Number.isFinite(seconds) || seconds <= 0) return null;
     return nowMs + seconds * 1000;
 }
 
+/**
+ * Is this token close enough to expiry to refresh it now?
+ *
+ * `null` — no lifetime from the platform — is `false`. We cannot know
+ * that an unknown token is nearly dead, and acting as if we did is what
+ * caused the refresh storm described on `HopeTokens.expiresAt`. The
+ * token is used until the platform rejects it.
+ */
 export function needsRefresh(
-    expiresAt: number,
+    expiresAt: number | null,
     nowMs: number,
     skewMs: number = REFRESH_SKEW_MS,
 ): boolean {
+    if (expiresAt === null) return false;
     return nowMs >= expiresAt - skewMs;
 }
 
@@ -238,12 +271,28 @@ export function parseTokenResponse(
     const accessToken = firstString(raw, ["accessToken", "AccessToken"]);
     const refreshToken = firstString(raw, ["refreshToken", "RefreshToken"]);
     if (!accessToken || !refreshToken) return null;
+    // `expires_in` is the OAuth 2.0 spelling and the likeliest thing a
+    // .NET token endpoint emits; the other two cover the serializer
+    // naming policies we already know this platform uses. Reading the
+    // lifetime under any of its plausible names is the difference
+    // between a proactive refresh and none at all.
+    const expiresAt = expiresAtFrom(
+        raw.expiresIn ?? raw.ExpiresIn ?? raw.expires_in,
+        nowMs,
+    );
+    if (expiresAt === null) {
+        // Loudly, and once per token: this is a contract gap, and
+        // without naming the keys the platform DID send, the next person
+        // to look at it is back to guessing. Not an error — the token is
+        // still usable, we simply will not pre-empt its expiry.
+        console.warn(
+            "hope auth: token response carried no readable lifetime " +
+                "(expiresIn / ExpiresIn / expires_in); proactive refresh " +
+                `is off for this token. Keys present: ${Object.keys(raw).join(", ")}`,
+        );
+    }
     return {
-        tokens: {
-            accessToken,
-            refreshToken,
-            expiresAt: expiresAtFrom(raw.expiresIn ?? raw.ExpiresIn, nowMs),
-        },
+        tokens: { accessToken, refreshToken, expiresAt },
         user: userFromBody(raw) ?? undefined,
     };
 }

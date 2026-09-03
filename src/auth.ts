@@ -216,7 +216,15 @@ export const config: NextAuthConfig = {
                 // signs a facilitator out mid-visit for no user-visible
                 // reason. Multiplied across many facilitators that is a
                 // steady drip of spurious sign-outs.
-                if (Date.now() < hope.expiresAt) return token;
+                // An unknown lifetime (`null`) keeps the pair too. We
+                // were never told this token was dead — only that a
+                // refresh we attempted did not succeed — and discarding
+                // a working credential on that basis is the sign-out
+                // this whole path exists to avoid. The platform's own
+                // 401 is what ends the session.
+                if (hope.expiresAt === null || Date.now() < hope.expiresAt) {
+                    return token;
+                }
                 // Actually dead. Drop the pair rather than keeping it:
                 // holding an expired token turns every downstream call
                 // into an opaque 401; clearing it lets the session end
