@@ -28,12 +28,18 @@ function isAbsolute(value: string): boolean {
  * Null rather than a placeholder path: the callers already render initials
  * when they have no image, and a broken `<img>` is worse than no `<img>`.
  */
-export function imageSrc(value: string | null | undefined): string | null {
+export function imageSrc(
+    value: string | null | undefined,
+    cohortId?: number,
+): string | null {
     const raw = (value ?? "").trim();
     if (!raw) return null;
     if (isAbsolute(raw)) return raw;
+    // Blob signing requires an explicit cohort; an unscoped URL cannot
+    // establish access and would only produce a broken image.
+    if (!Number.isSafeInteger(cohortId) || (cohortId ?? 0) <= 0) return null;
     // Anything else is treated as a blob path. `encodeURIComponent` on the
     // whole value keeps the slashes inside one query parameter rather than
     // letting them reshape the URL.
-    return `/api/proxy/blob?path=${encodeURIComponent(raw.replace(/^\/+/, ""))}`;
+    return `/api/proxy/blob?cohortId=${cohortId}&path=${encodeURIComponent(raw.replace(/^\/+/, ""))}`;
 }

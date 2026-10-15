@@ -134,8 +134,8 @@ export function Drafts({
     // server HTML and the client's first paint disagree at a day boundary.
     const [now] = useState(() => Date.now());
     const recentPost = useMemo(
-        () => (history ? pickReplyTarget(history, selectedPostTs, now) : null),
-        [history, selectedPostTs, now],
+        () => (history ? pickReplyTarget(history, selectedPostTs, now, cohort.id) : null),
+        [history, selectedPostTs, now, cohort.id],
     );
 
     // Drafts column reads its inputs directly from the most recent

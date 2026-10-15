@@ -75,6 +75,8 @@ export type RealEvent = {
      * `priorFacilitatorReplies[].activityId` to the exact post, and is
      * forwarded to comment-gen's /generate for memory dedup. */
     activity_id?: number;
+    /** Uploaded activity image, as the platform's Azure blob path. */
+    image_url?: string | null;
 };
 
 /** One reply in a reconstructed forum thread. Authors outside the

@@ -3,11 +3,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { ApiError } from "@/lib/api/client";
 import { requireFacilitatorEmail } from "@/lib/auth/facilitator";
 import {
-    SAS_TTL_SECONDS,
     blobConfig,
     normaliseBlobPath,
     signedBlobUrl,
 } from "@/lib/server/blob-url";
+import { assertImageAccess } from "@/lib/server/participant-access";
+import { requiredId } from "../_params";
 import { withApiErrors } from "../_errors";
 
 /**
@@ -28,16 +29,12 @@ import { withApiErrors } from "../_errors";
  * Session-gated. The URL it produces is a bearer credential for that blob,
  * short-lived but real, so it is not something to hand to anyone who asks.
  *
- * The honest limit: this signs any well-formed path a signed-in
- * facilitator asks for, without proving that path belongs to one of their
- * cohorts. Establishing that would mean loading the cohort bundle on every
- * image request. The exposure is bounded by everyone reaching it already
- * being a facilitator trusted with participant data, and by blob paths
- * being unguessable GUIDs rather than enumerable ids — but it is a real
- * gap, and the day this serves anyone less trusted it needs closing.
+ * The cohort must be accessible and the exact image path must occur in
+ * its participant profiles or activity records before a URL can be signed.
  */
 export const GET = withApiErrors(async (req: NextRequest) => {
-    await requireFacilitatorEmail();
+    const email = await requireFacilitatorEmail();
+    const cohortId = requiredId(req.nextUrl.searchParams, "cohortId");
 
     const path = normaliseBlobPath(req.nextUrl.searchParams.get("path"));
     if (!path) {
@@ -46,6 +43,8 @@ export const GET = withApiErrors(async (req: NextRequest) => {
         // blob we will sign.
         throw new ApiError(400, "a blob path is required", "invalid_request");
     }
+
+    await assertImageAccess(email, cohortId, path);
 
     const config = blobConfig();
     if (!config) {
@@ -60,14 +59,12 @@ export const GET = withApiErrors(async (req: NextRequest) => {
         );
     }
 
-    // `private`: the URL identifies one participant's photo and carries a
-    // credential, so it must not be held by a shared cache. `max-age` sits
-    // under the token's own lifetime so the browser never replays a URL
-    // that has expired.
+    // Recheck access on subsequent signing requests, including after
+    // a cohort assignment changes. Never cache the credential-bearing redirect.
     return NextResponse.redirect(signedBlobUrl(path, config), {
         status: 302,
         headers: {
-            "Cache-Control": `private, max-age=${Math.max(0, SAS_TTL_SECONDS - 30)}`,
+            "Cache-Control": "private, no-store",
         },
     });
 });

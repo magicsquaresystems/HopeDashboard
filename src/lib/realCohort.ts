@@ -102,6 +102,7 @@ export function bundleToHistory(
             hits: e.hits,
             avg_duration: e.avg_duration,
             activity_id: e.activity_id,
+            image_url: e.image_url ?? undefined,
         });
     }
 

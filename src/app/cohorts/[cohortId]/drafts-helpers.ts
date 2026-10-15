@@ -213,6 +213,7 @@ export function pickReplyTarget(
     history: ParticipantHistory,
     selectedPostTs: string | null,
     nowMs: number = Date.now(),
+    cohortId?: number,
 ): ReplyTarget | null {
     const draftable = (e: ParticipantHistory["events"][number]) =>
         typeof e.description === "string" &&
@@ -283,7 +284,7 @@ export function pickReplyTarget(
             typeof latest.confidence === "number" ? latest.confidence : undefined,
         hasImage:
             typeof latest.image_url === "string" && latest.image_url.trim() !== "",
-        imageSrc: imageSrc(latest.image_url) ?? undefined,
+        imageSrc: imageSrc(latest.image_url, cohortId) ?? undefined,
         topicId: latest.topic_id,
         activityId: latest.activity_id,
     };

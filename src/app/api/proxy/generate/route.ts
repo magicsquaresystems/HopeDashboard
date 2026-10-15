@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { commentGen } from "@/lib/api/server";
 import { requireFacilitatorEmail } from "@/lib/auth/facilitator";
 import type { GenerateRequest } from "@/lib/api/commentGen";
+import { assertParticipantAccess, positiveBodyId } from "@/lib/server/participant-access";
 import { withApiErrors } from "../_errors";
 
 /**
@@ -39,8 +40,11 @@ export const maxDuration = 300;
  * again" — so there is no UI work implied by this.
  */
 export const POST = withApiErrors(async (req: NextRequest) => {
-    await requireFacilitatorEmail();
-    const body = (await req.json()) as GenerateRequest;
-    const data = await commentGen().generate(body);
+    const email = await requireFacilitatorEmail();
+    const body = (await req.json()) as GenerateRequest | null;
+    const cohortId = positiveBodyId(body?.cohort_id, "cohort_id");
+    const participantId = positiveBodyId(body?.participant_id, "participant_id");
+    await assertParticipantAccess(email, cohortId, participantId);
+    const data = await commentGen().generate(body!);
     return NextResponse.json(data);
 });

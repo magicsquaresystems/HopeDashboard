@@ -61,5 +61,5 @@ export function useBundleImageUrl(
     // a bare path resolves against THIS origin and 404s — so every
     // participant with a real photograph showed initials. `imageSrc`
     // routes those through the signing proxy instead.
-    return imageSrc(p?.imageUrl);
+    return imageSrc(p?.imageUrl, bundle.data.cohort.id);
 }
