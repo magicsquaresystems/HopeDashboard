@@ -118,6 +118,18 @@ function bundle() {
     );
 }
 
+it("keeps raw nullable starts and the full enrolment roster apart from the visible queue", () => {
+    const source = userActivity();
+    source.modules[0].cohorts[0].users[0].started = null as unknown as string;
+    const result = buildCohortBundle(source, userProfiles, facilitatorComments, {modules:[]},
+        buildFacilitatorIdSet(facilitatorComments), buildProfileLookup(userProfiles),
+        new Set([MODULE_ID]), COHORT_ID, meta);
+    const participant = result.participants.find((p: {participant_id: string}) => p.participant_id===String(NAMED_ID));
+    expect(participant.recordedStartedAt).toBeNull();
+    expect(result.predictionRoster.members.some((m: {participant_id: string}) => m.participant_id===String(FACILITATOR_ID))).toBe(true);
+    expect(result.participants.some((p: {participant_id: string}) => p.participant_id===String(FACILITATOR_ID))).toBe(false);
+});
+
 describe("buildProfileLookup", () => {
     it("carries the platform's screen name, which is what a person is called there", () => {
         const byUser = buildProfileLookup(userProfiles);

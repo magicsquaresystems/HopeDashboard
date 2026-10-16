@@ -24,6 +24,7 @@ import {
 } from "@/app/cohorts/[cohortId]/drafts-helpers";
 import { cn } from "@/lib/utils";
 import type { Draft } from "@/lib/api/commentGen";
+import { createDraftRecorder, currentGrounding as checkedGrounding, publicationStatus } from "@/lib/draft-recording";
 
 /**
  * Prototype-style draft card.
@@ -52,7 +53,7 @@ import type { Draft } from "@/lib/api/commentGen";
  * per cohort. An earlier Send button recorded the research event and
  * marked the participant contacted while delivering nothing — a lie
  * with clinical consequences — so both buttons now claim only what
- * actually happened: `onUse` fires after the clipboard write succeeds,
+ * actually happened: `onCopy` records clipboard adoption,
  * and Send reports "Sent to Hope" only after the platform confirms.
  *
  * Send asks first. It is the one irreversible action in this app: the
@@ -72,9 +73,9 @@ export type DraftContext = {
 type DraftCardProps = {
     draft: Draft;
     onThumb: (draftId: string, label: "up" | "down") => void;
-    /** Fired after the reply text has actually reached the clipboard —
-     *  the caller records the research event and marks the participant
-     *  contacted, so this must never fire on a failed copy. */
+    /** Fired only after the platform confirms publication —
+     *  the caller records confirmed publication and marks contact. */
+    onCopy?: (draftId: string) => void;
     onUse: (draftId: string, sentText: string, action: "accept" | "edit") => void;
     onRegenerate?: () => void;
     regenerating?: boolean;
@@ -115,6 +116,7 @@ export function DraftCard({
     draft,
     onThumb,
     onUse,
+    onCopy,
     onRegenerate,
     regenerating,
     pending,
@@ -131,7 +133,7 @@ export function DraftCard({
     const bodyRef = useRef<HTMLTextAreaElement>(null);
     const clipboard = useCopyToClipboard();
     /** Whether this draft has already been recorded as used. */
-    const usedRef = useRef(false);
+    const recorder = useRef(createDraftRecorder());
 
     /**
      * Send state. `idle` → `confirming` → `sending` → `sent` | `failed`.
@@ -205,11 +207,10 @@ export function DraftCard({
     }
 
     /**
-     * Send, after the confirm strip.
+     * Publish, after the confirm strip.
      *
-     * `onUse` fires through the SAME latch the copy path uses, so a
-     * draft that was copied and then sent files one research record, not
-     * two — and whichever happened first is the one recorded.
+     * Only a confirmed publication consumes this latch. Earlier copies
+     * must not suppress the final text or mark the participant contacted.
      */
     async function clickSend() {
         if (!onPublish || sendState === "sending") return;
@@ -217,14 +218,13 @@ export function DraftCard({
         setSendError(null);
         try {
             const result = await onPublish(text);
-            const delivered = result?.status !== "dry_run";
+            const delivered = publicationStatus(result) === "published";
             setSendState(delivered ? "sent" : "dry_run");
             // A dry run files no research record and marks nobody
             // contacted. Both of those tell colleagues this participant
             // has been answered, and on a dry run nobody has.
-            if (delivered && !usedRef.current) {
-                usedRef.current = true;
-                onUse(String(draft.draft_id), text, edited ? "edit" : "accept");
+            if (delivered) {
+                recorder.current.publish(String(draft.draft_id), text, edited ? "edit" : "accept", onUse);
             }
         } catch (err) {
             // Stays on the card rather than becoming a toast: the reply
@@ -238,21 +238,9 @@ export function DraftCard({
     async function clickCopy() {
         const ok = await clipboard.copy(text);
         if (ok) {
-            // Only a real copy counts as using the draft — this is what
-            // records the research event and marks the participant
-            // contacted for colleagues.
-            //
-            // Once per card, though. Under the old "Send" label a click
-            // was a final act; "Copy" invites repetition — re-copying to
-            // paste again, or copying two personas to compare — and each
-            // one used to file another accept/edit and another memory
-            // write for a reply that will be sent once or not at all.
-            // The card remounts per draft (`key`), so the latch resets
-            // exactly when the draft genuinely changes.
-            if (!usedRef.current) {
-                usedRef.current = true;
-                onUse(String(draft.draft_id), text, edited ? "edit" : "accept");
-            }
+            // Copy measures adoption only. It does not consume the publication
+            // latch, mark contact, or claim that this text reached a participant.
+            recorder.current.copy(String(draft.draft_id), onCopy);
         } else {
             // Clipboard refused (permissions, insecure context). Select
             // the text so one keystroke finishes the job, and say so.
@@ -272,7 +260,9 @@ export function DraftCard({
     // the box: once a facilitator edits it the checks no longer apply to
     // what is on screen. Keeping them visible is still right — they say
     // what to look at, and the edit may not have touched it.
-    const warnings = draftWarnings(draft);
+    const checkedTextUnchanged = text === draft.body;
+    const currentGrounding = checkedGrounding(draft, text);
+    const warnings = draftWarnings({ ...draft, grounding: currentGrounding });
 
     return (
         <div className="space-y-3">
@@ -713,11 +703,11 @@ export function DraftCard({
                                 facilitator comes to ask what the app did,
                                 and "we could not check" is an answer they
                                 are entitled to. */}
-                            {draft.grounding === "grounded"
+                            {currentGrounding === "grounded"
                                 ? "yes, nothing in it goes beyond what they wrote"
-                                : draft.grounding === "ungrounded"
+                                : currentGrounding === "ungrounded"
                                   ? "it may mention something their post does not say"
-                                  : "not checked"}
+                                  : checkedTextUnchanged ? "not checked" : "text changed; review before sending"}
                         </div>
                         <p className="mt-1.5 italic">
                             Drafts are suggestions. Review before you paste

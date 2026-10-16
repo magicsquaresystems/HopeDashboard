@@ -23,6 +23,7 @@ import { CommentGenChip } from "@/components/comment-gen-chip";
 import {
     useActivityConversation,
     useEvent,
+    useCopyDraft,
     useGenerate,
     useParticipantPrediction,
     useThumb,
@@ -186,6 +187,7 @@ export function Drafts({
     const generate = useGenerate();
     const thumb = useThumb();
     const event = useEvent();
+    const copyDraft = useCopyDraft();
     const queueOp = useQueueOp(cohort.id);
 
     if (!selectedId) {
@@ -300,13 +302,14 @@ export function Drafts({
         // under an id no set contains — and per the /event contract that
         // also drives a memory write, so the corruption outlives the
         // row. Contact marking is separate and must not depend on the
-        // research write, so it runs either way once the copy is real.
+        // research write, so it runs only after publication is confirmed.
         if (response && !writeMode) {
             event.mutate({
                 draft_set_id: response.draft_set_id,
                 chosen_draft_id: draftId,
                 action,
                 sent_text: sentText,
+                delivery_confirmed: true,
             });
         }
         markContacted();
@@ -330,7 +333,7 @@ export function Drafts({
      *
      * Deliberately does NOT call `recordUse`. DraftCard fires that
      * through its own latch, so there is exactly one research record per
-     * draft whichever action happened first.
+     * draft after the platform confirms publication.
      */
     async function onPublish(text: string) {
         if (!canPublish || !recentPost?.activityId) return undefined;
@@ -782,6 +785,9 @@ export function Drafts({
                                 draft={current}
                                 onThumb={onThumb}
                                 onUse={onUse}
+                                onCopy={(draftId) => copyDraft.mutate({
+                                    draft_set_id: response.draft_set_id, draft_id: draftId,
+                                })}
                                 onRegenerate={onGenerate}
                                 regenerating={generate.isPending}
                                 pending={event.isPending}

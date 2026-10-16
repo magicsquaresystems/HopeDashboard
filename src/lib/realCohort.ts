@@ -51,22 +51,44 @@ export function findRealParticipant(
     return bundle.participants.find((p) => p.participant_id === participantId);
 }
 
-/**
- * Convert a real participant's raw events into the `ParticipantHistory`
- * shape engagement_ml expects.
- *
- * effective_start is the cohort's published start (from the platform),
- * NOT the participant's first event. engagement_ml uses cohort-relative
- * timing to compare like-for-like across participants.
- *
- * Events that fall outside `[effective_start, effective_start + score_at_day)`
- * are dropped — those would 422 from the API. Late starters get an empty
- * stream, which the model correctly treats as a high-risk signal.
- */
+/** Training uses the recorded start, else the earliest recorded start in
+ * the full cohort roster. Legacy bundles cannot recover a missing start and
+ * remain viewable, but are not eligible for model scoring until rebuilt. */
+export function predictionContext(bundle: CohortBundle, participantId: string,
+    scoreAtDay: number, now = Date.now()) {
+    const roster = bundle.predictionRoster;
+    const unavailable = (reason: string) => ({ eligible: false, reason,
+        effectiveStart: bundle.cohort.effectiveStart, cohortSize: bundle.participants.length });
+    if (roster?.contract !== "all_enrolments_v1") {
+        return unavailable("Enrolment timing needs refreshing before scoring.");
+    }
+    const raw = roster.members.find((m) => m.participant_id === participantId);
+    if (!raw) return unavailable("Participant enrolment timing is unavailable.");
+    const recorded = roster.members.map((m) => m.recordedStartedAt === null ? null :
+        Date.parse(ensureUtc(m.recordedStartedAt)));
+    if (recorded.some((t) => t !== null && !Number.isFinite(t))) {
+        return unavailable("The cohort contains an invalid enrolment start.");
+    }
+    const known = recorded.filter((t): t is number => t !== null);
+    if (!known.length) return unavailable("No recorded cohort start is available.");
+    const fallback = Math.min(...known);
+    const start = raw.recordedStartedAt === null ? fallback : Date.parse(ensureUtc(raw.recordedStartedAt));
+    const horizon = Math.min(scoreAtDay, 56);
+    const cutoff = start + horizon * 86_400_000;
+    const eligible = scoreAtDay > 0 && scoreAtDay <= bundle.cohort.programmeLengthDays && start + scoreAtDay * 86_400_000 <= now;
+    return {
+        eligible, reason: eligible ? undefined : "This participant's selected observation window has not elapsed or exceeds the programme.",
+        effectiveStart: new Date(start).toISOString(),
+        cohortSize: recorded.filter((t) => (t ?? fallback) <= cutoff).length,
+    };
+}
+
+/** Build display history and mark whether its frozen-model input is scoreable. */
 export function bundleToHistory(
     bundle: CohortBundle,
     participantId: string,
     scoreAtDay: number = DEFAULT_SCORE_AT_DAY,
+    now: number = Date.now(),
 ): ParticipantHistory | null {
     const p = findRealParticipant(bundle, participantId);
     if (!p) return null;
@@ -76,9 +98,10 @@ export function bundleToHistory(
     // the host's UTC offset while the declared `effective_start` (line
     // below, normalised) wouldn't — either 422ing at the service or
     // silently dropping day-0 events, depending on the offset's sign.
-    const effectiveStart = new Date(ensureUtc(bundle.cohort.effectiveStart));
+    const context = predictionContext(bundle, participantId, scoreAtDay, now);
+    const effectiveStart = new Date(ensureUtc(context.effectiveStart));
     const windowEndMs =
-        effectiveStart.getTime() + scoreAtDay * 24 * 60 * 60 * 1000;
+        effectiveStart.getTime() + Math.min(scoreAtDay, 56) * 24 * 60 * 60 * 1000;
 
     const events: EventRecord[] = [];
     for (const e of p.events) {
@@ -108,26 +131,16 @@ export function bundleToHistory(
 
     return {
         participant_id: p.participant_id,
-        effective_start: ensureUtc(bundle.cohort.effectiveStart),
+        prediction_eligible: context.eligible,
+        prediction_unavailable_reason: context.reason,
+        effective_start: ensureUtc(context.effectiveStart),
         events,
-        cohort_size: bundle.participants.length,
+        cohort_size: context.cohortSize,
         // Real cohort-facilitator-density is computable from the platform's
         // facilitator-event stream; for the bundle we approximate with the
         // share of participants who received any facilitator comment.
         cohort_facilitator_density: facilitatorDensity(bundle),
-        // engagement_ml rejects `score_at_day > programme_length_days` with
-        // a 422. Programme length has two sources — `COHORTS` in
-        // lib/cohorts.ts (drives the week selector) and the bundle's own
-        // `cohort.programmeLengthDays` (frozen at extraction time) — and
-        // they drift: lengthening a cohort in the registry without
-        // re-extracting made every request 422 with the queue showing a
-        // raw error dump. Take the larger so the invariant holds by
-        // construction; scoring at day 56 means the programme is at least
-        // 56 days long regardless of what the stale bundle recorded.
-        programme_length_days: Math.max(
-            bundle.cohort.programmeLengthDays,
-            scoreAtDay,
-        ),
+        programme_length_days: bundle.cohort.programmeLengthDays,
         score_at_day: scoreAtDay,
     };
 }

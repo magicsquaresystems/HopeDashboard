@@ -5,6 +5,7 @@ import { requireFacilitatorEmail } from "@/lib/auth/facilitator";
 import type { GenerateRequest } from "@/lib/api/commentGen";
 import { assertParticipantAccess, positiveBodyId } from "@/lib/server/participant-access";
 import { withApiErrors } from "../_errors";
+import { generationMemory } from "@/lib/server/generation-memory";
 
 /**
  * Generation is by far the slowest call the dashboard makes, so this route
@@ -44,7 +45,18 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     const body = (await req.json()) as GenerateRequest | null;
     const cohortId = positiveBodyId(body?.cohort_id, "cohort_id");
     const participantId = positiveBodyId(body?.participant_id, "participant_id");
-    await assertParticipantAccess(email, cohortId, participantId);
-    const data = await commentGen().generate(body!);
+    const bundle = await assertParticipantAccess(email, cohortId, participantId);
+    const memory = generationMemory(bundle, participantId, body!);
+    const client = commentGen();
+    if (memory.items.length) {
+        try {
+            const result = await client.writeMemoryBatch({ items: memory.items });
+            if (result.errors.length) console.warn("Generation memory reconciliation had item failures", { count: result.errors.length });
+        } catch {
+            // Generation remains available; memory_used reports what was actually retrieved.
+            console.warn("Generation memory reconciliation unavailable");
+        }
+    }
+    const data = await client.generate({ ...body!, facilitator_id: email, post_recorded_at: memory.postRecordedAt });
     return NextResponse.json(data);
 });

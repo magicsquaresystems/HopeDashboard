@@ -125,7 +125,7 @@ export function useCohortBatch(
             "cohort-batch",
             cohortId,
             scoreAtDay,
-            participants.map((p) => p.participant_id),
+            participants,
         ],
         queryFn: () => postJSON<BatchResponse>("/api/proxy/dropout/batch", body),
         staleTime: ONE_DAY,
@@ -170,12 +170,12 @@ export function useParticipantPrediction(
             "predict",
             cohortId,
             history?.participant_id ?? null,
-            history?.score_at_day ?? null,
+            history,
         ],
         queryFn: () =>
             postJSON<PredictionResponse>("/api/proxy/dropout/predict", history!),
         staleTime: ONE_DAY,
-        enabled: history !== null,
+        enabled: history !== null && history.prediction_eligible !== false,
     });
 }
 
@@ -259,6 +259,13 @@ export function usePolishText() {
  */
 export type ClientThumbRequest = Omit<ThumbRequest, "facilitator_id">;
 export type ClientEventRequest = Omit<EventRequest, "facilitator_id">;
+
+export function useCopyDraft() {
+    return useMutation({
+        mutationFn: (body: { draft_set_id: string; draft_id: string }) =>
+            postJSON("/api/proxy/copy", body),
+    });
+}
 
 export function useThumb() {
     return useMutation({

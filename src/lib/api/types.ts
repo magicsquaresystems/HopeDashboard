@@ -900,6 +900,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record clipboard adoption separately from selection or delivery */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CopyRequest"];
+                };
+            };
+            responses: {
+                /** @description Copy recorded idempotently, with no contact or reply-memory write. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AckResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -970,6 +1011,13 @@ export interface components {
          *     plus the identifiers needed for memory-augmented generation.
          */
         RichGenerateRequest: {
+            /**
+             * Format: date-time
+             * @description Trusted focal-post timestamp; later and current posts are excluded from memory.
+             */
+            post_recorded_at?: string | null;
+            /** @description Stamped by the authenticated dashboard proxy. */
+            facilitator_id?: string | null;
             /** @description Platform user_id. */
             participant_id: number;
             /** @description Platform cohort.id (e.g. 1680 for IIH-COH12-110226). */
@@ -1070,6 +1118,7 @@ export interface components {
             source: components["schemas"]["MemorySource"];
         };
         MemoryReplyRequest: {
+            activity_type?: components["schemas"]["ActivityType"];
             /** @description Idempotency key (combined with role=facilitator_reply). */
             comment_id: number;
             /** @description The post being replied to. */
@@ -1131,9 +1180,8 @@ export interface components {
             /**
              * Format: uuid
              * @description The draft variant the facilitator acted on. For action=accept or
-             *     action=edit, the same persona's text is also written to memory
-             *     via the HITL fast-path so subsequent /generate calls see it
-             *     without waiting for the platform webhook.
+             *     action=edit, a confirmed delivery is written to the originating
+             *     participant/cohort memory. The draft must belong to this set and facilitator.
              */
             chosen_draft_id: string;
             action: components["schemas"]["EventAction"];
@@ -1144,8 +1192,20 @@ export interface components {
              */
             sent_text?: string | null;
             facilitator_id: string;
+            /**
+             * @description True only after confirmed publication; selection/copy does not write reply memory.
+             * @default false
+             */
+            delivery_confirmed: boolean;
             /** @description Required when action=flag. */
             flag_reason?: string | null;
+        };
+        CopyRequest: {
+            /** Format: uuid */
+            draft_set_id: string;
+            /** Format: uuid */
+            draft_id: string;
+            facilitator_id: string;
         };
         AckResponse: {
             /** @enum {string} */

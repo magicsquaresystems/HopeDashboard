@@ -104,6 +104,9 @@ export type EventRecord = {
  * supplied here is accepted and ignored.
  */
 export type ParticipantHistory = {
+    /** Dashboard eligibility metadata; ignored by the prediction service. */
+    prediction_eligible?: boolean;
+    prediction_unavailable_reason?: string;
     participant_id: string;
     effective_start: string; // ISO-8601
     events: EventRecord[];

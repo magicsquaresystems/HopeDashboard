@@ -105,7 +105,7 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
     // the roster instead of from predictions and carry no tier. Derived
     // from the roster rather than from `notStarted` so the list and its
     // labelling can never disagree about which one is on screen.
-    const unscored = roster.length > 0;
+    const unscored = roster.length > 0 && !(batch.data?.predictions.length);
 
     // Display name per participant, for the search box. Built once from
     // the bundle rather than via the per-row hook, because the filter
@@ -156,17 +156,14 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
         // "Not scored yet" the honest rendering rather than a default
         // tier standing in for a score nobody produced.
         const rows: QueueRow[] =
-            roster.length > 0
-                ? roster.map((h) => ({ participant_id: h.participant_id }))
-                : (data?.predictions ?? []);
+            [...(data?.predictions ?? []),
+             ...roster.map((h) => ({ participant_id: h.participant_id }))];
         const q = query.trim().toLowerCase();
         // Risk filtering is meaningless without risk, and silently
         // matching nothing would read as "everyone left". The chips are
         // disabled in that state; this keeps the list whole regardless.
         const matchesFilter = rows.filter((p) =>
-            filter === "all" || p.risk_level === undefined
-                ? true
-                : p.risk_level === filter,
+            filter === "all" || p.risk_level === filter,
         );
         // Match on the NAME a facilitator sees, not the platform's
         // numeric user id. This used to search `participant_id`, which
@@ -335,7 +332,7 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                                 disabled={unscored && f !== "all"}
                                 title={
                                     unscored && f !== "all"
-                                        ? "Filtering by risk starts once this cohort's first week completes and the model can score it."
+                                        ? "Risk filters are available when at least one participant has a score."
                                         : undefined
                                 }
                                 onClick={() => setFilter(f)}
@@ -418,7 +415,7 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
                     lines of the facilitator's attention for nothing. */}
                 {notStarted && !isLoading && !error && !bundle.isError && (
                     <p className="px-1 pb-3 text-xs text-muted">
-                        No scores until the first week completes.
+                        Scores need a full observation window and a recorded start date for each participant.
                     </p>
                 )}
                 {bundle.data === null &&

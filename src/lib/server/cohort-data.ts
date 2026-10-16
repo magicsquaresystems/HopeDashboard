@@ -136,6 +136,8 @@ export type RealParticipant = {
     imageUrl: string | null;
     firstName: string | null;
     startedAt: string;
+    /** Raw enrolment start. Undefined means a legacy bundle with lost provenance. */
+    recordedStartedAt?: string | null;
     finishedAt: string | null;
     events: RealEvent[];
     priorFacilitatorReplies: RealFacilitatorReply[];
@@ -157,6 +159,10 @@ export type CohortBundle = {
          * granularity). Used to derive the week-selector range and the
          * `programme_length_days` field sent to engagement_ml. */
         programmeLengthDays: number;
+    };
+    predictionRoster?: {
+        contract: "all_enrolments_v1";
+        members: { participant_id: string; recordedStartedAt: string | null }[];
     };
     participants: RealParticipant[];
     /** Forum threads this cohort took part in, keyed by topic id.

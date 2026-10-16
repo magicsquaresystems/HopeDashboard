@@ -29,11 +29,12 @@ export async function assertParticipantAccess(
     email: string,
     cohortId: number,
     participantId: number,
-): Promise<void> {
+): Promise<CohortBundle> {
     const bundle = await accessibleBundle(email, cohortId);
     if (!bundle.participants.some((p) => p.participant_id === String(participantId))) {
         throw new ApiError(403, "Participant is not in this cohort", "participant_forbidden");
     }
+    return bundle;
 }
 
 export async function assertImageAccess(

@@ -587,6 +587,8 @@ export function buildCohortBundle(
             // (their module has no profile export) — the dashboard treats
             // absence as normal, not as an error.
             interview: profile?.interview ?? [],
+            // Preserve missing-start provenance separately from the display fallback.
+            recordedStartedAt: u.started ? normaliseTimestamp(u.started) : null,
             startedAt: normaliseTimestamp(u.started ?? meta.effectiveStart),
             finishedAt: u.finished ? normaliseTimestamp(u.finished) : null,
             events,
@@ -607,6 +609,15 @@ export function buildCohortBundle(
             moduleName: picks[0].moduleName,
             effectiveStart: meta.effectiveStart,
             programmeLengthDays: meta.programmeLengthDays,
+        },
+        predictionRoster: {
+            contract: /** @type {"all_enrolments_v1"} */ ("all_enrolments_v1"),
+            // Training's context feature includes all enrolments, including staff;
+            // the visible follow-up queue continues to exclude facilitators.
+            members: users.map((u) => ({
+                participant_id: String(u.userId),
+                recordedStartedAt: u.started ? normaliseTimestamp(u.started) : null,
+            })),
         },
         participants,
         // Forum threads this cohort took part in, keyed by topic id.

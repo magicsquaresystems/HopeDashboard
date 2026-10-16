@@ -9,9 +9,10 @@ import {
     MODEL_MAX_WEEK,
     programmeWeeks,
     useScoringStore,
-    weeksWithData,
     type ProgrammeWeek,
 } from "@/lib/store/scoringStore";
+import { useCohortBundle } from "@/lib/hooks/useCohortBundle";
+import { predictionContext } from "@/lib/realCohort";
 
 /**
  * Cohort-level scoring-week control.
@@ -32,7 +33,6 @@ export function WeekSelector({
     cohortId,
     programmeLengthDays,
     programmeLengthKnown = true,
-    effectiveStart,
 }: {
     /** Which cohort this selector belongs to, so arriving at a new one
      *  lands on its own latest week. */
@@ -49,6 +49,7 @@ export function WeekSelector({
     effectiveStart?: string;
 }) {
     const week = useScoringStore((s) => s.scoreAtWeek);
+    const bundle = useCohortBundle(cohortId);
     const setWeek = useScoringStore((s) => s.setScoreAtWeek);
     const clamp = useScoringStore((s) => s.clampToAvailable);
     const openCohort = useScoringStore((s) => s.openCohort);
@@ -65,10 +66,9 @@ export function WeekSelector({
     );
     const maxWithData = useMemo(
         () =>
-            effectiveStart === undefined
-                ? allWeeks.length
-                : weeksWithData(programmeLengthDays, effectiveStart, now),
-        [programmeLengthDays, effectiveStart, now, allWeeks.length],
+            bundle.data ? Math.max(0, ...allWeeks.filter((w) =>
+                bundle.data!.participants.some((p) => predictionContext(bundle.data!, p.participant_id, w * 7, now).eligible))) : 0,
+        [bundle.data, now, allWeeks],
     );
     // With no finish date from the source, the only weeks we can honestly
     // name are the ones that have happened. Rendering the six-week
@@ -88,15 +88,15 @@ export function WeekSelector({
     // six-week cohort always opened on its final week and a ten-week one
     // opened four weeks behind.
     useEffect(() => {
-        openCohort(cohortId, maxWithData);
-    }, [cohortId, maxWithData, openCohort]);
+        if (bundle.data) openCohort(cohortId, maxWithData);
+    }, [cohortId, maxWithData, openCohort, bundle.data]);
 
     // And pull the selection in if the cohort turns out to be shorter
     // than the week already chosen. Separate from the above because this
     // one must keep working while the facilitator stays on the cohort.
     useEffect(() => {
-        clamp(maxWithData);
-    }, [maxWithData, clamp]);
+        if (bundle.data) clamp(maxWithData);
+    }, [maxWithData, clamp, bundle.data]);
 
     const lastWeek = weeks[weeks.length - 1];
     const anchored = isAnchoredWeek(week);
@@ -149,6 +149,7 @@ export function WeekSelector({
                 })}
             </div>
             <span className="text-xs text-muted">
+                from each participant&apos;s start{" "}
                 (
                 {/* "end of programme" is a claim about where the
                     programme finishes, so it is only safe when a finish

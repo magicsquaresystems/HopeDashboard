@@ -88,6 +88,9 @@ export function createCommentGenClient(
                 signed: true,
             }),
 
+        copy: (body: { draft_set_id: string; draft_id: string; facilitator_id: string }) =>
+            request<Schemas["AckResponse"]>({ method: "POST", path: "/copy", body, signed: true }),
+
         event: (body: EventRequest) =>
             request<Schemas["AckResponse"]>({
                 method: "POST",
@@ -103,6 +106,9 @@ export function createCommentGenClient(
                 body,
                 signed: true,
             }),
+
+        writeMemoryBatch: (body: Schemas["MemoryBatchRequest"]) =>
+            request<Schemas["MemoryBatchResponse"]>({method: "POST", path: "/memory/batch", body, signed: true}),
 
         writeMemoryReply: (body: MemoryReplyRequest) =>
             request<MemoryWriteResponse>({

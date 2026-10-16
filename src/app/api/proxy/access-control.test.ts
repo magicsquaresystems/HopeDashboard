@@ -59,7 +59,7 @@ describe("generation access", () => {
         expect((await POST(generateRequest())).status).toBe(200);
         expect(mocks.access).toHaveBeenCalledWith("facilitator@example.org", 123);
         expect(mocks.bundle).toHaveBeenCalledWith(123);
-        expect(mocks.generate).toHaveBeenCalledWith(payload);
+        expect(mocks.generate).toHaveBeenCalledWith({ ...payload, facilitator_id: "facilitator@example.org", post_recorded_at: undefined });
     });
     it("refuses an unsigned request before fetching data or generating", async () => {
         mocks.email.mockRejectedValue(new ApiError(401, "Not signed in"));
