@@ -62,14 +62,13 @@ final2-*.png
 cohort-*.png
 hope-move dashboard.zip
 
-# Project documentation is kept out of this repo: it is public, and the docs
-# carry hosting costs, infrastructure detail and Space/model identifiers that
-# should not be. INTEGRATION.md 1c also lists open security items against a
-# live platform — an unprotected callback and a token that cannot be revoked —
-# which is the last thing to publish while they are still open.
-# They are maintained and shared with the team directly.
-# Already-published copies remain in this repo's git history.
-docs/
+# The engineering handbook in docs/ is committed, and this repository is
+# public, so it is written to carry no secrets, no participant data, no
+# personal logins and no unresolved security findings. Those live in
+# docs/private/, which is never committed and is shared with the team
+# directly. Anything that would need a credential or a person's name to be
+# useful belongs there, not in docs/.
+docs/private/
 
 .claude/settings.local.json
 

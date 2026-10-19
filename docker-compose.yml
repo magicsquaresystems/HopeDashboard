@@ -13,11 +13,11 @@
 #   * Copy .env.example to .env and fill the secrets.
 #
 # Modes:
-#   * CPU stub demo (no model download, instant):
-#       HOPE_DISABLE_GENERATION=1 docker compose up --build
-#   * CPU real generation (slow, ~30-80 s per draft): default
-#   * GPU: uncomment the `deploy:` block under comment-api (needs NVIDIA
-#     Container Toolkit)
+#   * GPU (the real thing): uncomment the `deploy:` block under comment-api
+#     (needs NVIDIA Container Toolkit). The 4B does not fit a CPU-only box.
+#   * No GPU: HOPE_DISABLE_GENERATION=1 docker compose up --build — drafting
+#     answers 503 "generation_disabled" (the UI's offline state); scoring
+#     and everything else work. Or point the dashboard at the hosted Space.
 services:
   risk-api:
     build:
@@ -54,7 +54,7 @@ services:
       # Optional engagement-fingerprint panel; generation degrades
       # gracefully (engagement_used: false) when the file is absent.
       HOPE_DROPOUT_PANEL_PATH: /data/dropout_artifacts/cumulative_features_panel.parquet
-      # Set to 1 for the CPU stub demo (no model load, canned drafts).
+      # Set to 1 to switch drafting off (503 generation_disabled, no model load).
       HOPE_DISABLE_GENERATION: ${HOPE_DISABLE_GENERATION:-}
       # Point at a vLLM server to serve decodes from it instead of loading
       # weights in this container. Empty = in-process transformers (default).
@@ -109,7 +109,7 @@ services:
     volumes:
       - hf-cache:/root/.cache/huggingface
     command: >
-      --model ${VLLM_MODEL:-h4cdev/qwen3.5-4b-hope-forum}
+      --model ${VLLM_MODEL:-set-VLLM_MODEL-to-a-merged-checkpoint}
       --served-model-name ${HOPE_GEN_MODEL_ID:-h4cdev/qwen3.5-4b-hope-forum-lora}
       --max-model-len 4096
       --gpu-memory-utilization 0.85
