@@ -121,4 +121,7 @@ and in particular for the pending October release ([02 §2.5](02-environments.md
    on the platform.
 6. **Re-extract any local research bundles** you still use. Bundles made
    before this release are not scored until they are rebuilt.
-7. If anything fails, roll back both ([08 §8.5](08-operations-runbook.md#85-rollback)).
+7. **Update the handbook.** Remove the "arrives with the October release"
+   labels in [03](03-dashboard.md), and move [02 §2.5](02-environments.md#25-release-state)
+   to the new live revisions.
+8. If anything fails, roll back both ([08 §8.5](08-operations-runbook.md#85-rollback)).
