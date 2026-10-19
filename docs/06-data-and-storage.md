@@ -103,14 +103,14 @@ sends them today).
 ### `hitl.sqlite`: facilitator feedback (the research log)
 
 Schema in `comment_generation/src/hitl/schema.sql`, plus additive migrations
-in `src/hitl/migrations.py` (release branch):
+in `src/hitl/migrations.py` (comment-service release branch, not yet deployed):
 
 | Table | One row per |
 | --- | --- |
 | `hitl_drafts` | Draft shown to a facilitator: text, persona (`draft_variant`), model, safety flags incl. grounding verdict, thumb, whether chosen, sent text, edit distance |
 | `hitl_events` | Facilitator decision on a draft set: accept / edit / reject / flag, edited text, latency (plus `delivery_confirmed`, `cohort_id` and an idempotency `event_key` after the release migration) |
 | `hitl_pairs` | Derived preference pair for later training |
-| `hitl_copy_events` | Draft copied to clipboard (release branch) |
+| `hitl_copy_events` | Draft copied to clipboard (comment-service release branch) |
 
 Migrations are `ALTER TABLE ADD COLUMN` for each missing column, plus a
 unique index on `event_key`. They run on open, are idempotent, and leave
@@ -176,7 +176,7 @@ pseudonymised (`P1…Pn`).
   gitignored there).
 - Used only for local development and research replays. **Production
   never reads them**; on Vercel the directory does not exist.
-- Bundles extracted before the October release lack `recordedStartedAt` and
+- Bundles extracted before the October release (2026-10-19) lack `recordedStartedAt` and
   `predictionRoster`. With the release, they still display but are not
   scored until re-extracted.
 

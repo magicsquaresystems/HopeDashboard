@@ -152,7 +152,7 @@ See [05 §5.4](05-models-and-hugging-face.md#54-updating-a-model).
 | `/login?error=session_expired` after ~15 min | Access-token refresh failed (rotation race between parallel requests is the leading suspect) | Vercel log `hope auth: /api/auth/refresh returned <status>`. A 401 there confirms the race. See [10](10-known-issues.md) |
 | Cohort picker empty | Platform link broken (fails closed), platform outage, or no **Active** cohorts assigned | `/api/auth/session` → `hopeLinked`; Vercel log `hope cohorts: fetch failed`; ask the programme lead to check the assignment |
 | Cohort opens with "bundle missing" | Platform fetch for that cohort failed and there is no local file (always the case on Vercel) | Vercel log `cohort N: platform fetch failed`; usually a platform 401/500 |
-| Scores missing for a cohort | Cohort started less than 7 days ago (nothing scoreable yet), or (release candidate) a legacy bundle without start provenance | Expected; wait, or re-extract the bundle |
+| Scores missing for a cohort | Cohort started less than 7 days ago (nothing scoreable yet), or a legacy research bundle without start provenance | Expected; wait, or re-extract the bundle |
 | "Comment generation is offline" | Space asleep and still waking, crashed, kill switch on, or 503 `backend_not_configured` | `/api/proxy/comment-gen/status`; Space state; Space logs |
 | 503 `generation_busy` | More than 4 concurrent generations | Expected on the current build; the dashboard retries 3× at 15/30/45 s. Real fix: vLLM ([10](10-known-issues.md)) |
 | A draft set takes 1–3 min | Sequential persona decodes, retries and the grounding check | Expected on T4; prewarm |

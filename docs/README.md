@@ -90,8 +90,8 @@ h4cdev/hope-move-engagement-ml   h4cdev/qwen3.5-4b-hope-forum-lora
    each time it sleeps, which is after 15 idle minutes. See
    [06](06-data-and-storage.md#63-comment-service-sqlite).
 2. **Pushing to `main` deploys production.** Vercel deploys this repo's
-   `main` to the facilitator site straight away. Use a branch and a PR with
-   green CI.
+   `main` to the facilitator site straight away. Run lint, typecheck, tests
+   and build locally before pushing (or use a PR so CI runs them first).
 3. **Env vars on Vercel are set by Magic Square only.** Vercel bakes them in
    at build time, so a new value needs a redeploy before it takes effect.
    Check what the running build actually has with `/api/debug/backends`
@@ -100,8 +100,8 @@ h4cdev/hope-move-engagement-ml   h4cdev/qwen3.5-4b-hope-forum-lora
    is off unless `HOPE_ENABLE_POST_COMMENT=1` and the cohort is in
    `HOPE_POST_COMMENT_COHORTS`. Test only on the test cohort
    ([03 §3.5](03-dashboard.md#35-the-reply-workflow)).
-5. **The October release must ship as a pair.** The dashboard release
-   candidate calls comment-service features (`/copy`,
-   `delivery_confirmed`) that only exist on the comment-service release
-   branch. Deploy both together or neither
+5. **The comment service is one release behind the dashboard.** The
+   dashboard's October release is live. The matching comment-service
+   branch (`/copy`, `delivery_confirmed`, feedback ownership checks) is not
+   deployed yet. Nothing breaks, but those records are dropped until it is
    ([02](02-environments.md#25-release-state)).

@@ -30,10 +30,11 @@ here.
    until midnight Pacific. *Fix:* Blaze plan with a budget alert, or
    incremental polling. [06 §6.2](06-data-and-storage.md#62-firestore)
 
-4. **The October release is staged, not deployed.** The dashboard and
-   comment-service release branches must go out together.
-   [02 §2.5](02-environments.md#25-release-state), checklist in
-   [09 §9.4](09-development-and-release.md#94-cutting-a-release).
+4. **The comment-service half of the October release is not deployed.**
+   The dashboard half went live on 2026-10-19. Until the comment service
+   follows, clipboard adoption is not recorded and feedback is not
+   owner-checked. [02 §2.5](02-environments.md#25-release-state), checklist
+   in [09 §9.4](09-development-and-release.md#94-cutting-a-release).
 
 ## Capacity and cost
 

@@ -197,9 +197,9 @@ or a credential for a backend.
 | `POST /api/proxy/dropout/batch` | session | risk `/batch` | Whole-cohort scoring |
 | `POST /api/proxy/dropout/predict` | session | risk `/predict` | One participant |
 | `GET /api/proxy/dropout/model-info` | session | risk `/model/info` | Model chip |
-| `POST /api/proxy/generate` | session + participant access | comment `/memory/batch`† then `/generate` | `maxDuration = 300` s. †Reconciling the participant's trusted platform posts into memory first, and stamping `facilitator_id` from the session, arrive with the October release |
+| `POST /api/proxy/generate` | session + participant access | comment `/memory/batch` then `/generate` | `maxDuration = 300` s. Reconciles the participant's trusted platform posts into memory first, stamps `facilitator_id` from the session |
 | `POST /api/proxy/text/polish` | session | comment `/text/polish` | Rephrase a facilitator's own text |
-| `POST /api/proxy/copy`† | session | comment `/copy` | Records clipboard adoption only. †Arrives with the October release |
+| `POST /api/proxy/copy` | session | comment `/copy` | Records clipboard adoption only. 404s until the comment-service release is deployed ([02 §2.5](02-environments.md#25-release-state)) |
 | `POST /api/proxy/thumb` | session | comment `/thumb` | Up/down on a draft |
 | `POST /api/proxy/event` | session | comment `/event` | Accept/edit/reject/flag research record; `facilitator_id` stamped server-side |
 | `GET /api/proxy/memory/[participantId]` | session + cohort scope | comment `/memory/{id}` | Read-only |
@@ -225,10 +225,7 @@ returns 503 `backend_not_configured` for that service only.
 
 ## 3.5 The reply workflow
 
-What happens when a facilitator works a participant. Step 3 describes the
-October release ([02 §2.5](02-environments.md#25-release-state)). Until it
-ships, copying a draft records `/event` and marks the participant
-contacted straight away, and there is no separate `/copy` record.
+What happens when a facilitator works a participant:
 
 1. **Score.** The queue builds one `ParticipantHistory` per participant
    (`bundleToHistory` in `realCohort.ts`) and calls `/dropout/batch`. Results
@@ -329,9 +326,8 @@ Three independent limits decide which weeks can be scored:
    service anchors to day 56 and says so (`horizon_used`, `anchored_to_days`);
    the UI shows an "anchored" notice.
 
-The release candidate on branch `fix/training-inputs-and-reply-workflow-20261016`
-(not yet on `main`, see [02-environments](02-environments.md#25-release-state))
-aligns the request inputs with how the frozen models were trained:
+Since the October release, the request inputs match how the frozen models
+were trained:
 
 - each participant's clock starts at their **recorded enrolment start**, else
   the earliest recorded start in the full cohort (not the published cohort
@@ -346,7 +342,7 @@ aligns the request inputs with how the frozen models were trained:
 This was checked on 2026-10-16 against the live predictor, replaying 216
 historical participants at day 7 and day 42. The corrected inputs gave the
 same probabilities and tiers as an independent reimplementation of the
-training rules. The inputs on `main` changed 14 and 10 tiers respectively.
+training rules. The previous inputs had changed 14 and 10 tiers respectively.
 It was a check that the inputs match training, not a new model evaluation,
 and nothing about the model itself changed. If the intended clock, target or
 features ever change, that is a new model version and needs retraining and a

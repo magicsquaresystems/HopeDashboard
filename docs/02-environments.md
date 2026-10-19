@@ -31,11 +31,11 @@ the Azure storage values. No code changes.
 
 | Thing | Controlled by | How you change it |
 | --- | --- | --- |
-| Dashboard code | This repo (`magicsquaresystems/HopeDashboard`, public). HOPE team has push access | PR into `main` |
+| Dashboard code | This repo (`magicsquaresystems/HopeDashboard`, public). HOPE team has push access | Push or PR to `main` |
 | Dashboard deployment and env vars | Magic Square (Vercel project) | Ask Magic Square. Env changes need a redeploy |
 | Platform API, platform staging | Magic Square | Ask Magic Square |
 | HF Spaces and model repos | The `h4cdev` Hugging Face account (shared programme login) | HF web UI, `huggingface_hub`, or the deploy scripts in each service repo |
-| Comment / risk service code | `comment_generation`, `engagement_ml` repos | PR, then deploy to the Space (§2.4) |
+| Comment / risk service code | `comment_generation`, `engagement_ml` repos | Push to `main`, then deploy to the Space (§2.4) |
 | Firestore project | H4C Google account | Firebase console |
 
 Who holds which credential, and the personal contacts, are in
@@ -44,7 +44,7 @@ Who holds which credential, and the personal contacts, are in
 ## 2.3 How the dashboard deploys
 
 ```text
-PR → CI (lint · typecheck · test · build) → merge to main → Vercel builds and deploys to production
+local checks (or a PR's CI: lint · typecheck · test · build) → push/merge to main → Vercel builds and deploys to production
 ```
 
 - Every push to `main` deploys. There is no manual gate after merge.
@@ -90,20 +90,29 @@ switched to another account. `deploy.sh` refuses a mismatched token, but
 
 ## 2.5 Release state
 
-As of 2026-10-19 there is a coordinated release waiting. It is reviewed
-locally but **not deployed**.
+The October release went out on 2026-10-19 for the **dashboard only**. Its
+comment-service half is still waiting.
 
-| Repo | Live | Release candidate | What the candidate changes |
+| Repo | Live | Pending | What it changes |
 | --- | --- | --- | --- |
-| `hope-dashboard` | `main` @ `0fcedc7` | branch `fix/training-inputs-and-reply-workflow-20261016` | Prediction inputs aligned with training ([03 §3.8](03-dashboard.md#38-scoring-weeks-and-the-prediction-input-contract)); Copy and Send recorded separately; memory reconciled from platform posts before generation |
-| `comment_generation` | `main` @ `2565f4e` | branch `fix/reply-safety-memory-feedback-20261016` @ `e8937ca` | Adds `/copy`, `delivery_confirmed`, owner and cohort checks on feedback, additive SQLite migrations, `HOPE_STATE_DIR`, `scripts/backup_state.py` |
+| `hope-dashboard` | `main`, October release included | — | Prediction inputs aligned with training ([03 §3.8](03-dashboard.md#38-scoring-weeks-and-the-prediction-input-contract)); Copy and Send recorded separately; memory reconciled from platform posts before generation |
+| `comment_generation` | `main` @ `2565f4e` on the Space | branch `fix/reply-safety-memory-feedback-20261016` @ `e8937ca` | Adds `/copy`, `delivery_confirmed`, owner and cohort checks on feedback, additive SQLite migrations, `HOPE_STATE_DIR`, `scripts/backup_state.py` |
 | `engagement_ml` | Space as above | branch `fix/cohort-reporting-and-input-validation-20261016` | Docs and reporting corrections. **No model or threshold change** |
 
-The dashboard candidate calls endpoints that only exist on the comment
-service candidate. **Deploy the comment service first, then merge the
-dashboard.** Rolling back means rolling back both. The comment service's
-SQLite migrations are additive (new columns and an index), so an older
-build still reads a migrated database.
+**Until the comment service is deployed:**
+
+- drafting, scoring and sending all work, because the live service ignores
+  the new request fields;
+- the dashboard's `/copy` record gets a 404 and is dropped silently, so
+  clipboard adoption is not measured. Copying still works for the
+  facilitator;
+- `delivery_confirmed` is ignored, and feedback is not checked for owner or
+  cohort.
+
+Deploying it (`bash space/deploy.sh` from that branch, merged to `main`
+first) closes all three. Its SQLite migrations are additive (new columns
+and an index), so an older build still reads a migrated database, and
+rolling it back needs no dashboard change.
 
 Release checklist: [09 §9.4](09-development-and-release.md#94-cutting-a-release).
 

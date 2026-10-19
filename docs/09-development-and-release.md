@@ -62,7 +62,7 @@ starting a second server, and run a production build on another port
 ```bash
 npm run lint
 npm run typecheck        # if routes were deleted: rm -rf .next first
-npm test                 # Vitest, 345 tests on the release branch
+npm test                 # Vitest, 345 tests
 npm run build
 ```
 
@@ -86,8 +86,9 @@ CI's install, and `python -m unittest discover -s tests` (risk). See
 
 ## 9.3 Working conventions
 
-- Branch from `main`, open a PR, and merge only with green CI. **Merging
-  deploys production.**
+- Push to `main` directly or through a PR. Either way **`main` deploys
+  production**, so run the four checks in §9.2 first. A PR has CI run
+  them for you.
 - Commit messages follow `type(scope): what changed and why` (see
   `git log`). The body records the reason.
 - No secrets, participant data, personal logins or open security findings
@@ -103,7 +104,7 @@ CI's install, and `python -m unittest discover -s tests` (risk). See
 ## 9.4 Cutting a release
 
 Use this checklist for any release that touches more than the dashboard,
-and in particular for the pending October release ([02 §2.5](02-environments.md#25-release-state)).
+including the outstanding comment-service half of the October release ([02 §2.5](02-environments.md#25-release-state)).
 
 1. **Record the current state.** Save `/health`, `/version` and
    `/model/info` output from both Spaces and the commit shown by
@@ -113,7 +114,7 @@ and in particular for the pending October release ([02 §2.5](02-environments.md
 3. **Comment service first.** Merge its release branch to `main`, run its
    tests, then `bash space/deploy.sh`. Wait for `RUNNING`, check `/version`
    and `/health` (`model_loaded: true`, `grounding_check: "on"`).
-4. **Then the dashboard.** Merge the PR to `main`. Vercel deploys. Check
+4. **Then the dashboard.** Push or merge to `main`. Vercel deploys. Check
    `/api/debug/backends` shows the new commit.
 5. **Verify on the test cohort.** Scores appear for elapsed weeks, a draft
    generates, Copy works, a dry-run send returns "dry run". Then, if
@@ -121,7 +122,7 @@ and in particular for the pending October release ([02 §2.5](02-environments.md
    on the platform.
 6. **Re-extract any local research bundles** you still use. Bundles made
    before this release are not scored until they are rebuilt.
-7. **Update the handbook.** Remove the "arrives with the October release"
-   labels in [03](03-dashboard.md), and move [02 §2.5](02-environments.md#25-release-state)
-   to the new live revisions.
+7. **Update the handbook.** Move [02 §2.5](02-environments.md#25-release-state)
+   to the new live revisions, and correct any page that described the old
+   behaviour.
 8. If anything fails, roll back both ([08 §8.5](08-operations-runbook.md#85-rollback)).
