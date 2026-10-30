@@ -69,6 +69,9 @@ hope-move dashboard.zip
 # directly. Anything that would need a credential or a person's name to be
 # useful belongs there, not in docs/.
 docs/private/
+# H4C's internal messaging journey and session checklists, shared for
+# building message selection. Their own working documents, not ours to publish.
+docs/AI dashboard messages/
 
 .claude/settings.local.json
 
