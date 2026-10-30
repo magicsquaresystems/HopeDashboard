@@ -136,6 +136,33 @@ function extractUsers(ua, targetCohortId) {
 }
 
 /**
+ * Whether an enrolled account shows any sign of having been used.
+ *
+ * Hope only lets facilitators message someone once they have activated
+ * their account — activation is their consent to be contacted — so a
+ * never-activated enrolment does not belong in the follow-up queue.
+ * The platform sends no activation flag, so this is a proxy: any login,
+ * activity, page visit or bookmark means the account was opened.
+ *
+ * `started` is deliberately not evidence either way. Across the raw
+ * exports 350 users have logins but no `started`, and its meaning is not
+ * documented, so it cannot stand in for activation.
+ *
+ * The platform is adding an explicit `activated` flag to the user profile
+ * (Magic Square, 22 Oct 2026). When the profile carries a boolean it wins
+ * outright; the proxy only covers profiles that predate it.
+ */
+export function hasActivated(u, profile) {
+    if (typeof profile?.activated === "boolean") return profile.activated;
+    return (
+        (u.logins?.length ?? 0) > 0 ||
+        (u.activities?.length ?? 0) > 0 ||
+        (u.pageVisits?.length ?? 0) > 0 ||
+        (u.bookmarks?.length ?? 0) > 0
+    );
+}
+
+/**
  * Profiles keyed by userId across EVERY module, not just the cohort's own.
  *
  * That breadth matters: `UserProfile (1).txt` has no module 337, so an IIH
@@ -175,6 +202,11 @@ export function buildProfileLookup(up) {
                 imageUrl: profile.imageUrl ?? null,
                 firstName: profile.firstName ?? null,
                 lastName: profile.lastName ?? null,
+                // Null until the platform sends the flag; see `hasActivated`.
+                activated:
+                    typeof profile.activated === "boolean"
+                        ? profile.activated
+                        : null,
                 interview: items,
             });
         }
@@ -423,9 +455,19 @@ export function buildCohortBundle(
     // comment, so it identifies anyone who has replied in the module.
     // It cannot identify a facilitator who has never posted; that needs
     // a role on the participant record, which the platform does not
-    // currently send. Raised with the platform engineer.
+    // currently send. Raised with the platform engineer. The live path
+    // also adds the signed-in facilitator (see `sources/platform.ts`).
+    //
+    // Never-activated enrolments are hidden for the same reason: nobody
+    // can follow them up (see `hasActivated`). Both counts travel with the
+    // bundle so the dashboard can say how many people it is not showing.
+    const staff = users.filter((u) => facilitatorIds.has(u.userId));
+    const activated = (u) => hasActivated(u, profileBy.get(u.userId));
+    const neverActivated = users.filter(
+        (u) => !facilitatorIds.has(u.userId) && !activated(u),
+    );
     const picks = pickRepresentative(users).filter(
-        (u) => !facilitatorIds.has(u.userId),
+        (u) => !facilitatorIds.has(u.userId) && activated(u),
     );
     const moduleId = picks0Module(users);
 
@@ -605,15 +647,24 @@ export function buildCohortBundle(
         cohort: {
             id: cohortId,
             code: meta.code,
-            moduleId: picks[0].moduleId,
-            moduleName: picks[0].moduleName,
+            // From the full enrolment, not `picks`: on a cohort's first
+            // day nobody may have activated yet, and an empty queue is a
+            // valid state rather than a crash.
+            moduleId: users[0]?.moduleId ?? null,
+            moduleName: users[0]?.moduleName ?? "",
             effectiveStart: meta.effectiveStart,
             programmeLengthDays: meta.programmeLengthDays,
+            hidden: {
+                facilitators: staff.length,
+                neverActivated: neverActivated.length,
+            },
         },
         predictionRoster: {
             contract: /** @type {"all_enrolments_v1"} */ ("all_enrolments_v1"),
-            // Training's context feature includes all enrolments, including staff;
-            // the visible follow-up queue continues to exclude facilitators.
+            // Training's context feature includes all enrolments, including
+            // staff and never-activated accounts; only the visible
+            // follow-up queue excludes them. Filtering here would shrink
+            // `cohort_size` below what the model was trained on.
             members: users.map((u) => ({
                 participant_id: String(u.userId),
                 recordedStartedAt: u.started ? normaliseTimestamp(u.started) : null,

@@ -26,6 +26,7 @@ const FACILITATOR_ID = 900;
 const NAMED_ID = 1;
 const FIRST_NAME_ONLY_ID = 2;
 const ANONYMOUS_ID = 3;
+const LOGIN = { signedIn: START };
 
 function userActivity() {
     return {
@@ -38,13 +39,16 @@ function userActivity() {
                         id: COHORT_ID,
                         name: "Hope Facilitators 2024",
                         users: [
-                            { userId: NAMED_ID, started: START, activities: [] },
+                            // A login each: an account with no trace of use
+                            // counts as never activated and is hidden.
+                            { userId: NAMED_ID, started: START, activities: [], logins: [LOGIN] },
                             {
                                 userId: FIRST_NAME_ONLY_ID,
                                 started: START,
                                 activities: [],
+                                logins: [LOGIN],
                             },
-                            { userId: ANONYMOUS_ID, started: START, activities: [] },
+                            { userId: ANONYMOUS_ID, started: START, activities: [], logins: [LOGIN] },
                             {
                                 userId: FACILITATOR_ID,
                                 started: START,
@@ -208,5 +212,81 @@ describe("buildCohortBundle — the platform's profile photo", () => {
                 x.participant_id === String(ANONYMOUS_ID),
         );
         expect(p.imageUrl).toBeNull();
+    });
+});
+
+describe("buildCohortBundle — never-activated enrolments", () => {
+    type Id = { participant_id: string };
+    const ids = (xs: Id[]) => xs.map((x) => x.participant_id);
+
+    /** The fixture cohort plus one extra enrolment shaped by `extra`. */
+    function withEnrolment(extra: Record<string, unknown>, profiles = userProfiles) {
+        const source = userActivity();
+        source.modules[0].cohorts[0].users.push({
+            userId: 4,
+            started: START,
+            activities: [],
+            ...extra,
+        } as (typeof source.modules)[0]["cohorts"][0]["users"][0]);
+        return buildCohortBundle(
+            source, profiles, facilitatorComments, { modules: [] },
+            buildFacilitatorIdSet(facilitatorComments),
+            buildProfileLookup(profiles), new Set([MODULE_ID]), COHORT_ID, meta,
+        );
+    }
+
+    it("hides an account with no trace of use but keeps it in the model's roster", () => {
+        // Hope only lets facilitators message someone once they have
+        // activated. The roster still counts them: cohort_size has to
+        // match how the model was trained.
+        const result = withEnrolment({});
+        expect(ids(result.participants)).not.toContain("4");
+        expect(ids(result.predictionRoster.members)).toContain("4");
+        expect(result.cohort.hidden).toEqual({ facilitators: 1, neverActivated: 1 });
+    });
+
+    it("treats `started` alone as no evidence of activation", () => {
+        // 350 raw users have logins but no `started`; it does not mean
+        // what its name suggests, so it cannot keep someone visible.
+        expect(ids(withEnrolment({ started: START }).participants)).not.toContain("4");
+    });
+
+    it.each([
+        ["a page visit", { pageVisits: [{ url: "/modules/session-1/intro" }] }],
+        ["a bookmark", { bookmarks: [{ recorded: START }] }],
+        ["a login", { logins: [{ signedIn: START }] }],
+    ])("keeps an account with %s", (_label, extra) => {
+        expect(ids(withEnrolment(extra).participants)).toContain("4");
+    });
+
+    it("lets the platform's own `activated` flag override the proxy either way", () => {
+        const flagged = (activated: boolean) => ({
+            modules: [{
+                id: MODULE_ID,
+                userProfiles: [
+                    ...userProfiles.modules[0].userProfiles,
+                    { userId: 4, activated, bio: "", interview: { items: [] } },
+                ],
+            }],
+        });
+        expect(ids(withEnrolment({}, flagged(true)).participants)).toContain("4");
+        expect(
+            ids(withEnrolment({ logins: [LOGIN] }, flagged(false)).participants),
+        ).not.toContain("4");
+    });
+
+    it("builds an empty queue rather than failing when nobody has activated", () => {
+        // A cohort on its first morning: everyone enrolled, nobody in yet.
+        const source = userActivity();
+        for (const u of source.modules[0].cohorts[0].users) {
+            delete (u as { logins?: unknown }).logins;
+        }
+        const result = buildCohortBundle(
+            source, userProfiles, facilitatorComments, { modules: [] },
+            buildFacilitatorIdSet(facilitatorComments),
+            buildProfileLookup(userProfiles), new Set([MODULE_ID]), COHORT_ID, meta,
+        );
+        expect(result.participants).toEqual([]);
+        expect(result.cohort.moduleId).toBe(MODULE_ID);
     });
 });

@@ -57,6 +57,7 @@ get the backend variables. After any change, redeploy.
 | `HOPE_HANDOFF_SECRET` | falls back to `AUTH_SECRET` in the mint script | Verifies `/enter?token=` hand-off links |
 | `HOPE_ENABLE_POST_COMMENT` | off | `1` lets this deployment publish replies to the platform |
 | `HOPE_POST_COMMENT_COHORTS` | empty = none | Cohort ids/codes allowed to receive replies; `*` = all (go-live) |
+| `HOPE_FACILITATOR_USER_IDS` | — | Comma-separated platform user ids always treated as staff and kept out of the queue. A stop-gap until the platform sends a facilitators list; the signed-in facilitator is excluded without it |
 | `HOPE_POST_COMMENT_DRY_RUN` | off | `1` = validate and log the payload, never send |
 | `AZURE_STORAGE_CONNECTION_STRING` | — | Platform's storage account; signs read-only photo URLs. Unset = initials instead of photos |
 | `AZURE_STORAGE_CONTAINER` | — | Container holding participant photos |

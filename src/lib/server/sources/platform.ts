@@ -23,6 +23,7 @@ import {
 import { createHopeClient } from "@/lib/api/hope";
 import { type CohortMeta } from "@/lib/cohorts";
 import { type CohortBundle } from "@/lib/server/cohort-data";
+import { withExtraFacilitators } from "@/lib/server/facilitator-ids";
 
 if (typeof window !== "undefined") {
     throw new Error("sources/platform.ts must not be imported in client code");
@@ -48,7 +49,12 @@ function moduleIdsIn(userProfiles: unknown): Set<number> {
 
 export async function fetchCohortBundle(
     cohort: CohortMeta,
-    opts: { baseUrl: string; accessToken: string },
+    opts: {
+        baseUrl: string;
+        accessToken: string;
+        /** Staff the documents cannot reveal; see `facilitator-ids.ts`. */
+        facilitatorUserIds?: readonly (string | number)[];
+    },
 ): Promise<CohortBundle> {
     const client = createHopeClient({
         baseUrl: opts.baseUrl,
@@ -62,7 +68,10 @@ export async function fetchCohortBundle(
         docs.userProfiles,
         docs.facilitatorComments,
         docs.discussionTopics,
-        buildFacilitatorIdSet(docs.facilitatorComments),
+        withExtraFacilitators(
+            buildFacilitatorIdSet(docs.facilitatorComments),
+            opts.facilitatorUserIds ?? [],
+        ),
         buildProfileLookup(docs.userProfiles),
         moduleIdsIn(docs.userProfiles),
         cohort.id,

@@ -69,8 +69,12 @@ here.
 
 ## Platform-side requests (Magic Square)
 
-9. **Participant profiles carry no role field.** The dashboard infers
-   facilitators from who has posted facilitator comments.
+9. **Participant profiles carry no role or activation field.** The dashboard
+   infers facilitators from who has posted facilitator comments, the
+   signed-in user and `HOPE_FACILITATOR_USER_IDS`, and infers activation
+   from any recorded use of the account. Magic Square agreed (22 Oct 2026)
+   to add an `activated` profile flag, which the dashboard already reads,
+   and a facilitators list per cohort, which it does not read yet.
 10. **Activity images are not passed to the model.** Replies about a photo
     are the category most often flagged as unsupported, since the model
     never sees it.

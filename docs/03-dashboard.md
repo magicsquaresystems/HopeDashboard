@@ -166,6 +166,27 @@ per request:
    `local/` is gitignored, so **on Vercel this fallback has no files** and a
    failed platform fetch shows an empty "bundle missing" state.
 
+**Who appears in the queue.** `buildCohortBundle` leaves two kinds of
+enrolment out of `participants`, and so out of the queue, every count, the
+prev/next arrows and the draft and photo access checks:
+
+- **Facilitators.** Anyone who has written a facilitator comment in the
+  module, the signed-in facilitator (`hopeUserId`), and any id in
+  `HOPE_FACILITATOR_USER_IDS`. A co-facilitator who has not posted yet is
+  only caught by the last two until the platform sends a facilitators list
+  ([10 #9](10-known-issues.md#platform-side-requests-magic-square)).
+- **Never-activated accounts.** Hope only lets facilitators message someone
+  after they activate, so they cannot be followed up. The platform's
+  `activated` profile flag decides when present; otherwise an account with
+  no login, activity, page visit or bookmark counts as not activated
+  (`hasActivated`). `started` is not used: many accounts have logins
+  without it.
+
+Both stay in `predictionRoster`, because `cohort_size` must count every
+enrolment as it did in training. The numbers left out travel as
+`cohort.hidden` and appear in the queue badge's tooltip ("not shown: 6 not
+yet activated, 1 facilitator").
+
 The UI never sees platform JSON; it consumes the `CohortBundle` type defined
 in `cohort-data.ts`. That type is the seam: adding fields is safe, removing or
 retyping one needs a coordinated change.

@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { lastEventAt, rosterOrder } from "@/lib/roster";
+import { hiddenEnrolmentNote, lastEventAt, rosterOrder } from "@/lib/roster";
 import type { EventRecord, ParticipantHistory } from "@/lib/api/dropout";
 
 function history(
@@ -105,5 +105,19 @@ describe("rosterOrder", () => {
             history("c", ["2026-08-21T09:00:00Z"]),
         ];
         expect(rosterOrder(input)).toHaveLength(3);
+    });
+});
+
+describe("hiddenEnrolmentNote", () => {
+    it("names both reasons, singular and plural", () => {
+        expect(hiddenEnrolmentNote({ facilitators: 1, neverActivated: 6 }))
+            .toBe("not shown: 6 not yet activated, 1 facilitator");
+        expect(hiddenEnrolmentNote({ facilitators: 2, neverActivated: 0 }))
+            .toBe("not shown: 2 facilitators");
+    });
+
+    it("says nothing when nothing was hidden or the bundle predates the counts", () => {
+        expect(hiddenEnrolmentNote({ facilitators: 0, neverActivated: 0 })).toBeNull();
+        expect(hiddenEnrolmentNote(undefined)).toBeNull();
     });
 });

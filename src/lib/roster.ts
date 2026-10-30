@@ -64,3 +64,27 @@ export function rosterOrder(
         return a.participant_id.localeCompare(b.participant_id);
     });
 }
+
+/**
+ * What the queue is deliberately not showing, as a sentence fragment.
+ *
+ * Facilitators and never-activated enrolments are left out of the bundle
+ * (see `buildCohortBundle`). Without saying so, a queue of 18 beside a
+ * platform roster of 24 reads as missing data rather than a decision.
+ * Null when nothing was hidden, or on bundles that predate the counts.
+ */
+export function hiddenEnrolmentNote(
+    hidden: { facilitators: number; neverActivated: number } | undefined,
+): string | null {
+    if (!hidden) return null;
+    const parts: string[] = [];
+    if (hidden.neverActivated > 0) {
+        parts.push(`${hidden.neverActivated} not yet activated`);
+    }
+    if (hidden.facilitators > 0) {
+        parts.push(
+            `${hidden.facilitators} facilitator${hidden.facilitators === 1 ? "" : "s"}`,
+        );
+    }
+    return parts.length ? `not shown: ${parts.join(", ")}` : null;
+}

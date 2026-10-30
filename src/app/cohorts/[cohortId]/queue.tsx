@@ -51,6 +51,7 @@ import { friendlyLoadError, type FriendlyLoadError } from "@/lib/load-error";
 import { HopeMoveLink } from "@/components/hope-move-link";
 import { agoLabel, shortActor } from "@/lib/queue-state-shared";
 import { QUEUE_PILL_LABELS } from "@/lib/risk";
+import { hiddenEnrolmentNote } from "@/lib/roster";
 import { lastActiveLabel } from "@/lib/signals";
 import { useBundleDisplayName } from "@/lib/hooks/displayName";
 import type { CohortMeta } from "@/lib/cohorts";
@@ -232,6 +233,7 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
     const needingFollowUp = visible.filter(
         (p) => p.risk_level === "high" || p.risk_level === "medium",
     ).length;
+    const hiddenNote = hiddenEnrolmentNote(bundle.data?.cohort.hidden);
     const listedLabel =
         `${visible.length} participant${visible.length === 1 ? "" : "s"} listed` +
         // "0 need follow-up" would be a claim the model never made: in
@@ -239,7 +241,8 @@ export function Queue({ cohort }: { cohort: CohortMeta }) {
         // to need follow-up rather than nothing needing it.
         (filter === "all" && !unscored
             ? ` · ${needingFollowUp} need follow-up`
-            : "");
+            : "") +
+        (hiddenNote ? ` · ${hiddenNote}` : "");
 
     // Collapsed rail: a thin vertical card that preserves the count
     // (situational awareness) and lets the facilitator re-expand with

@@ -159,6 +159,9 @@ export type CohortBundle = {
          * granularity). Used to derive the week-selector range and the
          * `programme_length_days` field sent to engagement_ml. */
         programmeLengthDays: number;
+        /** Enrolments left out of `participants`, by reason. Absent on
+         * bundles built before the exclusions existed. */
+        hidden?: { facilitators: number; neverActivated: number };
     };
     predictionRoster?: {
         contract: "all_enrolments_v1";
@@ -234,9 +237,20 @@ export async function resolveCohortBundle(
                 const { fetchCohortBundle } = await import(
                     "@/lib/server/sources/platform"
                 );
+                const { parseFacilitatorIds } = await import(
+                    "@/lib/server/facilitator-ids"
+                );
                 return await fetchCohortBundle(cohort, {
                     baseUrl: config.apiUrl,
                     accessToken: session.tokens.accessToken,
+                    // The person looking at the queue is never someone
+                    // to follow up, whether or not they have posted yet.
+                    facilitatorUserIds: [
+                        session.hopeUserId,
+                        ...parseFacilitatorIds(
+                            process.env.HOPE_FACILITATOR_USER_IDS,
+                        ),
+                    ],
                 });
             } catch (err) {
                 console.error(
